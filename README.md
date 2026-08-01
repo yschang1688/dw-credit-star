@@ -1,10 +1,26 @@
 # 信用卡風險資料倉儲（星狀綱要 · SQL Server T-SQL）
 
 把橫斷面寬表轉成可分析的維度模型：**星狀綱要、SCD Type 2、預存程序 ETL、資料品質稽核、自動產出的資料字典**。
+**全程容器化**——資料庫引擎跑在容器裡，從空機到載完 18 萬列事實並通過稽核約 3 分鐘，任何機器上結果相同。
 
 > **In brief** — A credit-risk data warehouse in T-SQL: Kimball star schema, Slowly Changing
 > Dimension Type 2 with verified point-in-time joins, stored-procedure ETL, and a data-quality
 > layer whose rules persist per batch. Built on the UCI Taiwan credit-card default dataset.
+> The whole stack runs in a container (arm64-native Azure SQL Edge), reproducible end-to-end
+> in about three minutes.
+
+## 完整重現
+
+```bash
+docker run -d --name creditdw -e "ACCEPT_EULA=1" -e "MSSQL_SA_PASSWORD=DwStar!2026dev" \
+  -e "MSSQL_PID=Developer" -p 11433:1433 mcr.microsoft.com/azure-sql-edge:latest
+
+python -m venv .venv && ./.venv/bin/pip install -r requirements.txt
+./.venv/bin/python etl/run_etl.py               # 綱要 → 載入 → 稽核，約 3 分鐘
+./.venv/bin/python etl/gen_data_dictionary.py   # 產出 docs/data_dictionary.md
+```
+
+容器映像選用 **Azure SQL Edge（原生 arm64）** 而非 SQL Server 2022，是實測後的被迫取捨：後者在 Apple Silicon 上以模擬層執行會直接崩潰。原因與排查過程見[環境備註](#環境備註為什麼是-azure-sql-edge-而不是-sql-server-2022)。
 
 | 你想看 | 去這裡 |
 |---|---|
@@ -12,6 +28,7 @@
 | 品質規則怎麼設計（ERROR／WARN 分級、規則登錄化） | [`sql/04_quality_checks.sql`](sql/04_quality_checks.sql) |
 | 星狀綱要與粒度守衛 | [`sql/01_schema.sql`](sql/01_schema.sql) |
 | 星狀綱要讓哪些問題變好問 | [`sql/05_analysis_queries.sql`](sql/05_analysis_queries.sql) |
+| 容器化執行環境與跨平台取捨 | [環境備註](#環境備註為什麼是-azure-sql-edge-而不是-sql-server-2022) |
 | 資料字典（由系統目錄自動產出） | [`docs/data_dictionary.md`](docs/data_dictionary.md) |
 
 
@@ -118,17 +135,6 @@ JOIN dw.dim_customer AS d
 **ERROR 與 WARN 分野明確。** ERROR 是倉儲自身邏輯壞掉（粒度重複、孤兒鍵、版本重疊），必須修；WARN 是來源本來就長這樣（未定義碼值、帳單超額）。把來源髒資料判成 ERROR 會讓整條線每天紅燈，紅燈久了就沒人看——那比不檢核更糟。
 
 **資料字典從系統目錄產出，不手寫。** 手寫的一定過期：欄位改了沒人記得改文件，久了就沒人信。`etl/gen_data_dictionary.py` 讀 `sys.tables` / `sys.columns` / `sys.foreign_key_columns`，文件與綱要不可能不一致。
-
-## 執行
-
-```bash
-docker run -d --name creditdw -e "ACCEPT_EULA=1" -e "MSSQL_SA_PASSWORD=DwStar!2026dev" \
-  -e "MSSQL_PID=Developer" -p 11433:1433 mcr.microsoft.com/azure-sql-edge:latest
-
-python -m venv .venv && ./.venv/bin/pip install -r requirements.txt
-./.venv/bin/python etl/run_etl.py               # 綱要 → 載入 → 稽核，約 3 分鐘
-./.venv/bin/python etl/gen_data_dictionary.py   # 產出 docs/data_dictionary.md
-```
 
 ## 環境備註：為什麼是 Azure SQL Edge 而不是 SQL Server 2022
 
