@@ -2,6 +2,19 @@
 
 把橫斷面寬表轉成可分析的維度模型：**星狀綱要、SCD Type 2、預存程序 ETL、資料品質稽核、自動產出的資料字典**。
 
+> **In brief** — A credit-risk data warehouse in T-SQL: Kimball star schema, Slowly Changing
+> Dimension Type 2 with verified point-in-time joins, stored-procedure ETL, and a data-quality
+> layer whose rules persist per batch. Built on the UCI Taiwan credit-card default dataset.
+
+| 你想看 | 去這裡 |
+|---|---|
+| SCD Type 2 怎麼實作（含 row_hash 變更偵測、時點正確的事實關聯） | [`sql/03_procedures.sql`](sql/03_procedures.sql) |
+| 品質規則怎麼設計（ERROR／WARN 分級、規則登錄化） | [`sql/04_quality_checks.sql`](sql/04_quality_checks.sql) |
+| 星狀綱要與粒度守衛 | [`sql/01_schema.sql`](sql/01_schema.sql) |
+| 星狀綱要讓哪些問題變好問 | [`sql/05_analysis_queries.sql`](sql/05_analysis_queries.sql) |
+| 資料字典（由系統目錄自動產出） | [`docs/data_dictionary.md`](docs/data_dictionary.md) |
+
+
 來源：UCI「default of credit card clients」（台灣某銀行 2005，30,000 卡戶，六個月帳單／繳款）。
 原始結構是一列一個客戶、把六個月攤成 18 個欄位的寬表——問「哪些客戶風險升高了」得寫六段 UNION。
 
@@ -130,7 +143,7 @@ Message: Unable to create a new asynchronous I/O context. Please increase sysctl
 
 改用 **Azure SQL Edge（原生 arm64，SQL Server 2019 引擎）**，本專案用到的 T-SQL 全部支援：綱要、預存程序、`HASHBYTES`、篩選索引、視窗函數、`STRING_AGG`。
 
-**誠實邊界**：Azure SQL Edge 是 SQL Server 的子集，**不含 SSIS**（多則 JD 有列）。SSIS 是圖形化 ETL 工具、僅 Windows，本專案以預存程序實作 ETL 邏輯——概念相通（抽取、轉換、載入、批次控制、錯誤處理），但不是同一個工具。面試要據實說明。
+**誠實邊界**：Azure SQL Edge 是 SQL Server 的子集，**不含 SSIS**。本專案以 T-SQL 預存程序實作 ETL 邏輯——抽取、轉換、載入、批次控制、錯誤處理等概念相通，但 SSIS 是圖形化工具且僅 Windows，兩者不是同一個東西。
 
 ## 專案結構
 
