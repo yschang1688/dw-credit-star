@@ -33,7 +33,10 @@ jobs:
                   print(f"{f}\n{e}")
               sys.exit("DAG 匯入失敗")
 
-          dag = bag.get_dag("credit_dw_etl")
+          # 用 bag.dags 而非 bag.get_dag()：後者會去查 Airflow 中繼資料庫，
+          # 在沒跑過 `airflow db migrate` 的 CI 上會炸在 "no such table: dag"。
+          # 本機容器有中繼庫所以看不出來——這正是 CI 該抓、而本機抓不到的差異。
+          dag = bag.dags.get("credit_dw_etl")
           if dag is None:
               sys.exit("找不到 credit_dw_etl")
 
