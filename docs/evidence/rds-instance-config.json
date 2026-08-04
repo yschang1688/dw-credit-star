@@ -1,0 +1,18 @@
+{
+    "DBInstanceIdentifier": "dw-credit-star",
+    "Engine": "sqlserver-ex",
+    "EngineVersion": "16.00.4255.1.v1",
+    "DBInstanceClass": "db.t3.micro",
+    "AllocatedStorage": 20,
+    "StorageType": "gp3",
+    "StorageEncrypted": true,
+    "MultiAZ": false,
+    "BackupRetentionPeriod": 0,
+    "DeletionProtection": false,
+    "PubliclyAccessible": true,
+    "LicenseModel": "license-included",
+    "AvailabilityZone": "ap-northeast-1d",
+    "PerformanceInsightsEnabled": false,
+    "MonitoringInterval": 0,
+    "InstanceCreateTime": "2026-08-03T09:40:29.676000+00:00"
+}

@@ -152,9 +152,28 @@ Message: Unable to create a new asynchronous I/O context. Please increase sysctl
 
 **誠實邊界**：Azure SQL Edge 是 SQL Server 的子集，**不含 SSIS**。本專案以 T-SQL 預存程序實作 ETL 邏輯——抽取、轉換、載入、批次控制、錯誤處理等概念相通，但 SSIS 是圖形化工具且僅 Windows，兩者不是同一個東西。
 
+## 也在 AWS RDS for SQL Server 上跑過
+
+同一套綱要與 ETL，**未改任何一行程式碼**，在 AWS RDS for SQL Server Express（SQL Server 2022）上完整跑完一次——連線參數本來就走環境變數，換環境只需換變數。基礎設施以 Terraform 定義（`infra/aws/`），流程是 **apply → 跑 ETL → 存證 → destroy**：這個專案不需要常駐，用完即銷毀，整趟成本在 US$1 以內。
+
+實跑結果（`docs/evidence/`）：18 萬列事實、51,110 個 SCD Type 2 維度版本，9 條 ERROR 級品質規則全數通過，與本機容器一致。拆除後三項資源實查歸零。
+
+```bash
+cd infra/aws && terraform apply     # 約 15 分鐘
+# 跑 ETL（見 docs/runbook-aws.md）
+terraform destroy
+```
+
+搭配的最小權限 IAM 政策在 `infra/aws/iam-policy-terraform-rds.json`，兩個刻意的收斂：非指定區域的 API 一律 Deny，唯一的 IAM 寫入權限鎖死到 RDS 服務連結角色那一條路徑。完整操作與踩坑紀錄見 **[docs/runbook-aws.md](docs/runbook-aws.md)**。
+
+**誠實邊界**：免費方案帳號只能開最小規格 `db.t3.micro`，而 t3 的 CPU 積分會在載入途中耗盡，吞吐從 250 列/秒掉到 13 列/秒——這趟 18 萬列實際跑了約 5 小時而非十幾分鐘。升級規格會被 `FreeTierRestrictionError` 擋下，需轉付費方案。這是機型與方案的限制，不是設定問題，但排程時要據實預留時間。
+
 ## 專案結構
 
 ```
+infra/aws/                   Terraform：RDS、安全群組、子網路群組 + 最小權限 IAM 政策
+docs/runbook-aws.md          雲端部署 runbook（開／跑／拆 + 已知踩點）
+docs/evidence/               雲端實跑存證（ETL log、組態、驗證、拆除查核）
 sql/01_schema.sql            綱要 DDL（含反依賴 teardown，可重複執行）
 sql/02_reference_data.sql    參考維度種子 + 12 條品質規則登錄
 sql/03_procedures.sql        SCD2 與事實載入預存程序

@@ -1,0 +1,22 @@
+# destroy 後資源歸零查證（2026-08-04 05:00 CST）
+
+$ terraform destroy -auto-approve
+Destroy complete! Resources: 5 destroyed.
+
+$ aws rds describe-db-instances --query 'DBInstances[].DBInstanceIdentifier'
+[]
+
+$ aws ec2 describe-security-groups --filters Name=tag:Project,Values=dw-credit-star --query 'SecurityGroups[].GroupId'
+[]
+
+$ aws rds describe-db-subnet-groups --query 'DBSubnetGroups[].DBSubnetGroupName'
+[]
+
+Snapshot（Console 實查，ap-northeast-1 服務概觀）
+    資料庫叢集 0 ／ 資料庫執行個體 0 ／ 快照 0
+
+註：snapshot 這項當下無法用 CLI 查證——政策漏了 rds:DescribeDBSnapshots，
+    被自己的最小權限政策擋下（事後已補進 iam-policy-terraform-rds.json）。
+    改以 Console 實查確認為 0，而非僅依 backup_retention_period=0 +
+    skip_final_snapshot=true 推論。snapshot 不會出現在執行個體清單裡卻會持續計費，
+    是拆除查核最容易漏的一項，所以不接受「設定上應該不會有」當作結論。

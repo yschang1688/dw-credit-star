@@ -1,0 +1,39 @@
+批次 a747b85d-a461-4d1a-800d-83ea0c088473
+
+[1/5] 套用綱要與參考資料
+  ✓ 01_schema.sql（13 批）
+  ✓ 02_reference_data.sql（8 批）
+  ✓ 03_procedures.sql（5 批）
+  ✓ 04_quality_checks.sql（5 批）
+
+[2/5] 擷取來源
+  來源 30,000 列 × 25 欄
+
+[3/5] 載入暫存區
+  暫存區 30,000 列
+
+[4/5] 逐月載入維度與事實（由舊到新）
+  200504（第 6 近月）→ 事實 30,000 列｜維度累計 30,000 版本
+  200505（第 5 近月）→ 事實 30,000 列｜維度累計 32,550 版本
+  200506（第 4 近月）→ 事實 30,000 列｜維度累計 35,892 版本
+  200507（第 3 近月）→ 事實 30,000 列｜維度累計 40,226 版本
+  200508（第 2 近月）→ 事實 30,000 列｜維度累計 44,591 版本
+  200509（第 1 近月）→ 事實 30,000 列｜維度累計 51,110 版本
+
+[5/5] 資料品質稽核
+
+規則                         嚴重度     判定          檢核       失敗
+△ DIM_EDU_UNDOCUMENTED     WARN    WARN    30,000      345  未定義碼值分布：碼5=280筆　碼6=51筆　碼0=14筆
+△ DIM_MAR_UNDOCUMENTED     WARN    WARN    30,000       54  未定義碼值筆數：54
+△ FACT_BILL_OVER_LIMIT     WARN    WARN   180,000    8,274  最大超額比：10.690000000000000
+✓ FACT_GRAIN               ERROR   PASS   180,000        0  違反粒度的組合數：0
+✓ FACT_NEG_PAYMENT         WARN    PASS   180,000        0  最小繳款金額：0.00
+✓ FACT_ORPHAN_FK           ERROR   PASS   180,000        0  孤兒 customer_sk 筆數
+✓ FACT_ROWCOUNT            ERROR   PASS   180,000        0  預期 180000 列，實際 180000 列
+✓ OUTCOME_COVERAGE         ERROR   PASS    30,000        0  違約結果列數：30000
+✓ SCD2_NO_OVERLAP          ERROR   PASS    51,110        0  重疊版本組數：0
+✓ SCD2_ONE_CURRENT         ERROR   PASS    30,000        0  當前版本數 <> 1 的客戶數：0
+✓ STG_PK_UNIQUE            ERROR   PASS    30,000        0  重複 client_id 數：0
+✓ STG_ROWCOUNT             ERROR   PASS    30,000        0  來源 30000 列，暫存區 30000 列
+
+✓ 所有 ERROR 級規則通過

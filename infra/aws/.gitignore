@@ -1,0 +1,9 @@
+# state 內含明文主密碼與端點，絕不進版控
+*.tfstate
+*.tfstate.*
+.terraform/
+.terraform.lock.hcl
+crash.log
+# 實際的 tfvars 含操作者對外 IP，只提交 .example
+terraform.tfvars
+*.auto.tfvars
