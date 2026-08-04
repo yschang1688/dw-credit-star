@@ -12,11 +12,34 @@ $ aws ec2 describe-security-groups --filters Name=tag:Project,Values=dw-credit-s
 $ aws rds describe-db-subnet-groups --query 'DBSubnetGroups[].DBSubnetGroupName'
 []
 
-Snapshot（Console 實查，ap-northeast-1 服務概觀）
-    資料庫叢集 0 ／ 資料庫執行個體 0 ／ 快照 0
+Snapshot（2026-08-04 Console 實查；2026-08-05 補政策後 CLI 複驗）
+    Console 服務概觀：資料庫叢集 0 ／ 資料庫執行個體 0 ／ 快照 0
 
-註：snapshot 這項當下無法用 CLI 查證——政策漏了 rds:DescribeDBSnapshots，
-    被自己的最小權限政策擋下（事後已補進 iam-policy-terraform-rds.json）。
-    改以 Console 實查確認為 0，而非僅依 backup_retention_period=0 +
-    skip_final_snapshot=true 推論。snapshot 不會出現在執行個體清單裡卻會持續計費，
-    是拆除查核最容易漏的一項，所以不接受「設定上應該不會有」當作結論。
+$ aws rds describe-db-snapshots --snapshot-type manual --query 'DBSnapshots[].DBSnapshotIdentifier'
+[]
+$ aws rds describe-db-snapshots --snapshot-type automated --query 'DBSnapshots[].DBSnapshotIdentifier'
+[]
+$ aws rds describe-db-snapshots --query 'length(DBSnapshots)'
+0
+
+註：snapshot 這項在拆除當下無法用 CLI 查證——政策漏了 rds:DescribeDBSnapshots，
+    被自己的最小權限政策擋下。當時改以 Console 實查確認為 0，而非僅依
+    backup_retention_period=0 + skip_final_snapshot=true 推論；隔日補上該權限
+    （政策版本 3）後以 CLI 複驗，結果一致。snapshot 不會出現在執行個體清單裡
+    卻會持續計費，是拆除查核最容易漏的一項，所以不接受「設定上應該不會有」當作結論。
+
+
+# 成本（2026-08-05 查，Cost Explorer）
+
+$ aws ce get-cost-and-usage --time-period Start=2026-08-03,End=2026-08-06 \
+    --granularity MONTHLY --metrics UnblendedCost --group-by Type=DIMENSION,Key=RECORD_TYPE
+    Usage    $0.0000050044
+    Credit  -$0.0000050044     → 淨額 $0
+
+RDS 單獨查詢：UnblendedCost 0、UsageQuantity 0——RDS 未產生費用，
+而非產生後被額度折抵。推測新帳號免費方案本身即涵蓋 db.t3.micro 這個規格
+（這也是免費方案規格上限的另一面：限制同時是免費的邊界）。
+
+⚠️ 保留：本次查詢回傳 Estimated=true，且 8/3 當日明細為空（RDS 實際運轉在
+    8/3 晚至 8/4 凌晨）。AWS 帳務通常還會回填 24–48 小時，此 $0 有可能尚未完全入帳。
+    帳號層級的 $5 月預算警示仍在，若後續有費用會被攔到。不宣稱「確認零成本」。
