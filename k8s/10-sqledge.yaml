@@ -1,0 +1,77 @@
+# 倉儲引擎：StatefulSet 而非 Deployment。
+#
+# 這是 Compose → k8s 最容易做錯的一步。Compose 的 `volumes: sqldata:/var/opt/mssql`
+# 在 k8s 直覺翻譯成 Deployment + PVC，但那是錯的：Deployment 的預設更新策略會
+# 先起新 Pod 再殺舊 Pod，兩個 Pod 會同時掛同一個 PVC 掛載同一份資料檔——
+# SQL Server 的資料檔不容許兩個引擎同時開啟。
+#
+# StatefulSet 保證同一時間只有一個 Pod 持有該身分與磁碟，且 volumeClaimTemplates
+# 讓儲存與 Pod 身分綁定。這不是風格偏好，是資料完整性。
+apiVersion: v1
+kind: Service
+metadata:
+  name: sqledge
+  namespace: dw-credit-star
+spec:
+  # Headless Service：StatefulSet 的穩定網路身分靠它。
+  clusterIP: None
+  selector:
+    app: sqledge
+  ports:
+    - port: 1433
+      targetPort: 1433
+      name: tds
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: sqledge
+  namespace: dw-credit-star
+spec:
+  serviceName: sqledge
+  replicas: 1          # 單一引擎；多副本需要真正的 HA 方案，不是加數字
+  selector:
+    matchLabels:
+      app: sqledge
+  template:
+    metadata:
+      labels:
+        app: sqledge
+    spec:
+      containers:
+        - name: sqledge
+          # 原生 arm64；SQL Server 2022 在 Apple Silicon 走模擬層會崩（io_setup 模擬不完整）
+          image: mcr.microsoft.com/azure-sql-edge:latest
+          ports:
+            - containerPort: 1433
+              name: tds
+          envFrom:
+            - configMapRef:
+                name: dw-config
+            - secretRef:
+                name: dw-secret
+          volumeMounts:
+            - name: sqldata
+              mountPath: /var/opt/mssql
+          # 就緒探針取代 Compose 那句「sleep 10 等它暖機」——
+          # ETL Job 靠它決定何時可以開始，而不是靠猜。
+          readinessProbe:
+            tcpSocket:
+              port: 1433
+            initialDelaySeconds: 15
+            periodSeconds: 5
+            failureThreshold: 30
+          resources:
+            requests:
+              memory: "1Gi"
+              cpu: "250m"
+            limits:
+              memory: "3Gi"
+  volumeClaimTemplates:
+    - metadata:
+        name: sqldata
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        resources:
+          requests:
+            storage: 5Gi

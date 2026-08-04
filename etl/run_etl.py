@@ -10,6 +10,7 @@
 """
 from __future__ import annotations
 
+import os
 import sys
 from pathlib import Path
 
@@ -23,7 +24,20 @@ SOURCE_REPO = Path.home() / "credit-risk-decision-policy"
 
 
 def extract() -> pd.DataFrame:
-    """從既有的信用風險專案取來源資料（OpenML 快取），保持單一來源。"""
+    """取來源資料。
+
+    兩條路徑刻意共用同一個函式，避免資料分岔：
+    - 本機：從既有的信用風險專案讀（OpenML 快取），保持單一來源。
+    - 容器／叢集：讀 `DW_SOURCE_CSV` 指向的快照——容器裡看不到隔壁 repo，
+      快照由 `etl/export_source_csv.py` 在宿主機從同一個 load() 產出。
+    """
+    csv = os.environ.get("DW_SOURCE_CSV")
+    if csv:
+        df = pd.read_csv(csv)
+        if "client_id" not in df.columns:
+            df.insert(0, "client_id", df.index + 1)
+        return df
+
     sys.path.insert(0, str(SOURCE_REPO / "src"))
     from data import load  # type: ignore
 

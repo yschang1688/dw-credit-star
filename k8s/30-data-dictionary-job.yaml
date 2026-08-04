@@ -1,0 +1,30 @@
+# 資料字典產出：**獨立 manifest，必須在 ETL Job 完成後才套用**。
+#
+# 第一版把這個 Job 和 ETL Job 放在同一份檔案裡，實跑當場打臉：`kubectl apply`
+# 一次送出兩個 Job，它們**同時啟動**——字典 Job 第一次因資料庫尚未就緒而失敗，
+# 第二次剛好撞上 ETL 套完綱要的時點就「成功」了，產出了一份描述空倉儲的文件。
+# 註解裡寫「跑在 ETL 之後」不會讓它真的跑在之後；k8s 的 Job 之間沒有隱含順序。
+#
+# 分兩份檔案 + `kubectl wait` 串接，順序才是真的：ETL 失敗時這份根本不會被套用，
+# 文件因此永遠只描述通過稽核的那版綱要。
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: dw-data-dictionary
+  namespace: dw-credit-star
+spec:
+  backoffLimit: 1
+  ttlSecondsAfterFinished: 3600
+  template:
+    spec:
+      restartPolicy: Never
+      containers:
+        - name: gen-dict
+          image: dw-credit-star-etl:local
+          imagePullPolicy: IfNotPresent
+          command: ["python", "etl/gen_data_dictionary.py"]
+          envFrom:
+            - configMapRef:
+                name: dw-config
+            - secretRef:
+                name: dw-secret

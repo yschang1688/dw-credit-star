@@ -1,0 +1,35 @@
+# 命名空間、設定與憑證。
+#
+# Compose 與 k8s 的第一個真實差異：Compose 把「設定」和「密碼」混在同一段
+# environment 裡，k8s 逼你分開——ConfigMap 可以進版控，Secret 不行。
+# 這個分野在 Compose 是慣例，在 k8s 是型別。
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: dw-credit-star
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: dw-config
+  namespace: dw-credit-star
+data:
+  DW_HOST: "sqledge"          # k8s Service 名稱即 DNS，取代 Compose 的服務名解析
+  DW_PORT: "1433"
+  DW_USER: "sa"
+  DW_DATABASE: "CreditRiskDW"
+  DW_REPO_ROOT: "/opt/dwrepo"
+  ACCEPT_EULA: "1"
+  MSSQL_PID: "Developer"
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: dw-secret
+  namespace: dw-credit-star
+type: Opaque
+stringData:
+  # 本機一次性開發憑證，與 etl/db.py 的預設值同一組；叢集只跑在開發者機器上。
+  # 生產環境應以外部祕密管理（External Secrets／Vault）注入，不得放進 repo。
+  MSSQL_SA_PASSWORD: "DwStar!2026dev"
+  DW_PASSWORD: "DwStar!2026dev"

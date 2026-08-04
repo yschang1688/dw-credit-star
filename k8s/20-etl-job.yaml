@@ -1,0 +1,51 @@
+# ETL 作業：Job 而非 Deployment。
+#
+# Compose 沒有「跑完就結束」的一級概念——那裡的 ETL 要嘛手動 `docker compose run`，
+# 要嘛做成常駐服務再想辦法讓它自己停。k8s 的 Job 直接表達「這是一次性任務，
+# 有完成狀態、有重試上限」，這正是批次 ETL 的語意。
+#
+# 冪等性在這裡從「好習慣」升級為「前提」：Job 會依 backoffLimit 重試，
+# 不冪等的 ETL 配上自動重試等於自動化地製造重複資料。本專案的 ETL
+# 事實表先刪後插、SCD2 以雜湊比對，重放後筆數不變（實測）。
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: dw-etl
+  namespace: dw-credit-star
+spec:
+  backoffLimit: 2                 # 失敗重試兩次；靠 ETL 冪等才敢開
+  ttlSecondsAfterFinished: 3600   # 完成一小時後自動清理，不留殭屍物件
+  template:
+    metadata:
+      labels:
+        app: dw-etl
+    spec:
+      restartPolicy: Never
+      # 等資料庫真的能連上再開始，取代 Compose 的 depends_on
+      # （depends_on 只保證「容器啟動了」，不保證「服務準備好了」——
+      #  SQL Server 暖機要十幾秒，這個差別會讓 ETL 在第一秒就連線失敗）。
+      initContainers:
+        - name: wait-for-db
+          image: busybox:1.36
+          command:
+            - sh
+            - -c
+            - |
+              echo "等待 sqledge:1433 可連線…"
+              until nc -z sqledge 1433; do sleep 2; done
+              echo "資料庫已就緒"
+      containers:
+        - name: etl
+          image: dw-credit-star-etl:local
+          imagePullPolicy: IfNotPresent   # 使用本機建置的映像，不對外拉取
+          envFrom:
+            - configMapRef:
+                name: dw-config
+            - secretRef:
+                name: dw-secret
+          resources:
+            requests:
+              memory: "512Mi"
+              cpu: "250m"
+            limits:
+              memory: "2Gi"
