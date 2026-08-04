@@ -43,14 +43,16 @@ BI 端最常見的錯誤是拿一張混合粒度的寬表做聚合，把「客�
 
 單頁，上方兩張（遷移矩陣、分層鑑別力）、下方兩張（趨勢、品質看板）。加一段文字說明資料來源與粒度。**品質看板放在同一頁而不是另開一頁**——業務數字與它的可信度應該被一起看到。
 
-## 發佈到 Tableau Public
+## 發佈到 Tableau Public（網頁版即可，免裝 Desktop）
 
-發佈需要 Tableau Public 帳號並在 Tableau Desktop Public Edition 內登入。這一步**必須由你本人操作**（建立帳號與登入不能代做）。
+Tableau Public 的 **web authoring** 可直接在瀏覽器建 viz，但一次只能上傳一個檔案——故 `extract/dw_credit_star_bi.xlsx` 把五張表合成單一 Excel（含 README 工作表：粒度與計算欄位公式）。
 
-1. 下載 Tableau Desktop Public Edition（免費）
-2. 連接 `bi/extract/` 五個 CSV（Text File 連接器；CSV 已含 BOM，中文欄位不會亂碼）
-3. 依上述規格建計算欄位與四張工作表 → 組成儀表板
-4. Server → Tableau Public → Save to Tableau Public
-5. 把公開連結貼回 repo README 與履歷
+1. 登入 public.tableau.com → 右上 **Create** → **Web Authoring**（或個人頁的 Create a Viz）
+2. 上傳 `bi/extract/dw_credit_star_bi.xlsx`；五張資料表各自成為可拖入的工作表
+3. 依上述規格建計算欄位與四張工作表 → 組成單頁儀表板
+4. **Publish**（網頁版的儲存即發佈——Tableau Public 上的一切都是公開的）
+5. 把公開連結貼回本 README 與履歷
+
+發佈需帳號登入，**由本人操作**；資料為 UCI 公開資料集，無個資疑慮。
 
 **公開前檢查**：資料為 UCI 公開資料集（台灣某銀行 2005 年匿名資料），無個資疑慮；工作簿命名與說明保持技術中性，勿出現求職相關字樣。
