@@ -1,0 +1,82 @@
+name: checks
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  dag-import:
+    # DAG import 錯誤是 Airflow 最典型的失敗：語法或相依一壞，
+    # 排程器就靜靜地不排這條線——UI 上看不到「本來該跑的東西沒跑」。
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+      - run: pip install "apache-airflow==2.10.4" pymssql pandas
+      - name: DAG 可被解析且結構符合預期
+        env:
+          AIRFLOW__CORE__LOAD_EXAMPLES: "false"
+          DW_REPO_ROOT: ${{ github.workspace }}
+        run: |
+          python - <<'PY'
+          import sys
+          from airflow.models import DagBag
+
+          bag = DagBag("airflow/dags", include_examples=False)
+          if bag.import_errors:
+              for f, e in bag.import_errors.items():
+                  print(f"{f}\n{e}")
+              sys.exit("DAG 匯入失敗")
+
+          dag = bag.get_dag("credit_dw_etl")
+          if dag is None:
+              sys.exit("找不到 credit_dw_etl")
+
+          # SCD2 的時序鏈是正確性約束，不是風格——月份任務必須由舊到新串成單鏈。
+          # 這條鏈斷掉不會報錯，只會讓維度版本區間錯亂。
+          chain = [f"load_month_ix{i}" for i in (6, 5, 4, 3, 2, 1)]
+          for upstream, downstream in zip(chain, chain[1:]):
+              task = dag.get_task(downstream)
+              if upstream not in task.upstream_task_ids:
+                  sys.exit(f"SCD2 時序鏈斷裂：{downstream} 的上游不含 {upstream}")
+
+          gate = dag.get_task("quality_gate")
+          if "gen_data_dictionary" not in gate.downstream_task_ids:
+              sys.exit("品質閘未擋在資料字典之前——髒資料會產出文件")
+
+          fin = dag.get_task("finalize")
+          if fin.trigger_rule != "all_done":
+              sys.exit(f"finalize 的 trigger_rule 是 {fin.trigger_rule}，"
+                       "失敗時不會收尾，dq.load_batch 會留下 RUNNING 殭屍批次")
+
+          print(f"✓ credit_dw_etl 解析成功，{len(dag.tasks)} 個任務，時序鏈與品質閘結構符合")
+          PY
+
+  sql-sanity:
+    # 綱要腳本必須可重複執行：teardown 順序寫錯（先維度後事實）會被外鍵擋住，
+    # 腳本跑到一半失敗後就再也跑不動——這個坑踩過一次，故納入檢查。
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: teardown 順序為反依賴
+        run: |
+          python - <<'PY'
+          import re, sys, pathlib
+          sql = pathlib.Path("sql/01_schema.sql").read_text(encoding="utf-8")
+          # 只看 teardown 區塊：第一個 CREATE TABLE 之後的 DROP 是各表
+          # 「DROP…CREATE」配對，與拆除順序無關，混進來會誤判。
+          teardown = sql.split("CREATE TABLE")[0]
+          drops = re.findall(r"DROP TABLE IF EXISTS\s+(\w+\.\w+)", teardown)
+          facts = [i for i, t in enumerate(drops) if "fact_" in t]
+          dims = [i for i, t in enumerate(drops) if "dim_" in t]
+          if not facts or not dims:
+              sys.exit("找不到事實表或維度表的 DROP 敘述")
+          if max(facts) > min(dims):
+              sys.exit(f"teardown 順序錯誤：事實表必須全部先於維度表被 DROP\n{drops}")
+          print(f"✓ teardown 反依賴順序正確（{len(drops)} 張表）")
+          PY

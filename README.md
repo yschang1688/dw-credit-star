@@ -1,5 +1,7 @@
 # 信用卡風險資料倉儲（星狀綱要 · SQL Server T-SQL）
 
+[![checks](https://github.com/yschang1688/dw-credit-star/actions/workflows/checks.yml/badge.svg)](https://github.com/yschang1688/dw-credit-star/actions/workflows/checks.yml)
+
 把橫斷面寬表轉成可分析的維度模型：**星狀綱要、SCD Type 2、預存程序 ETL、資料品質稽核、自動產出的資料字典**。
 **全程容器化**——資料庫引擎跑在容器裡，從空機到載完 18 萬列事實並通過稽核約 3 分鐘，任何機器上結果相同。
 
