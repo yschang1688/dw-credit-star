@@ -1,0 +1,45 @@
+# Airflow 編排層（開發模式）：兩個服務，倉儲引擎 + Airflow standalone。
+#
+# 取捨（誠實邊界，README 同步陳述）：
+# - `airflow standalone` = SQLite 中繼資料庫 + SequentialExecutor，是單機示範配置；
+#   生產環境該換 Postgres 中繼庫 + LocalExecutor/CeleryExecutor。本專案的重點是
+#   DAG 的編排語意（時序鏈、品質閘、批次收尾），不是叢集部署。
+# - _PIP_ADDITIONAL_REQUIREMENTS 每次啟動裝依賴，是官方標註「僅開發用」的捷徑；
+#   生產環境該 build 自訂映像。
+# - sa 密碼是本機一次性開發憑證（只綁 localhost、隨 down -v 消失），與 etl/db.py 同一組。
+services:
+  sqledge:
+    image: mcr.microsoft.com/azure-sql-edge:latest   # 原生 arm64；SQL Server 2022 在 Apple Silicon 模擬層會崩
+    environment:
+      ACCEPT_EULA: "1"
+      MSSQL_SA_PASSWORD: "DwStar!2026dev"
+      MSSQL_PID: Developer
+    ports:
+      - "127.0.0.1:11433:1433"
+    volumes:
+      - sqldata:/var/opt/mssql
+
+  airflow:
+    image: apache/airflow:2.10.4-python3.11
+    command: standalone
+    depends_on:
+      - sqledge
+    environment:
+      _PIP_ADDITIONAL_REQUIREMENTS: "pymssql==2.3.2 pandas==2.2.3"
+      AIRFLOW__CORE__DAGS_FOLDER: /opt/dwrepo/airflow/dags
+      AIRFLOW__CORE__LOAD_EXAMPLES: "false"
+      AIRFLOW__CORE__DEFAULT_TIMEZONE: Asia/Taipei
+      _AIRFLOW_WWW_USER_USERNAME: admin
+      _AIRFLOW_WWW_USER_PASSWORD: admin
+      DW_REPO_ROOT: /opt/dwrepo
+      DW_HOST: sqledge
+      DW_PORT: "1433"
+    ports:
+      - "127.0.0.1:8080:8080"
+    volumes:
+      - ..:/opt/dwrepo
+      - airflow-home:/opt/airflow
+
+volumes:
+  sqldata:
+  airflow-home:

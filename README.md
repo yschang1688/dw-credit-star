@@ -29,6 +29,7 @@ python -m venv .venv && ./.venv/bin/pip install -r requirements.txt
 | 星狀綱要與粒度守衛 | [`sql/01_schema.sql`](sql/01_schema.sql) |
 | 星狀綱要讓哪些問題變好問 | [`sql/05_analysis_queries.sql`](sql/05_analysis_queries.sql) |
 | 容器化執行環境與跨平台取捨 | [環境備註](#環境備註為什麼是-azure-sql-edge-而不是-sql-server-2022) |
+| Airflow 編排（SCD2 時序依賴鏈、品質閘、批次對稱收尾；兩輪實跑驗證） | [`airflow/`](airflow/) |
 | 資料字典（由系統目錄自動產出） | [`docs/data_dictionary.md`](docs/data_dictionary.md) |
 
 
