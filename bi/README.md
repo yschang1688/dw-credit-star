@@ -51,7 +51,7 @@ Tableau Public 的 **web authoring** 可直接在瀏覽器建 viz，但一次只
 2. 上傳 `bi/extract/dw_credit_star_bi.xlsx`；五張資料表各自成為可拖入的工作表
 3. 依上述規格建計算欄位與四張工作表 → 組成單頁儀表板
 4. **Publish**（網頁版的儲存即發佈——Tableau Public 上的一切都是公開的）
-5. 把公開連結貼回本 README 與履歷
+5. ~~把公開連結貼回本 README 與履歷~~ ✅ **已發佈（2026-08-05）**：https://public.tableau.com/app/profile/yu.sheng.chang/viz/credit-risk-dw-dashboard/1
 
 發佈需帳號登入，**由本人操作**；資料為 UCI 公開資料集，無個資疑慮。
 
