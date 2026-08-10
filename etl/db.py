@@ -25,8 +25,6 @@ import uuid
 from contextlib import contextmanager
 from pathlib import Path
 
-import pymssql
-
 ROOT = Path(__file__).resolve().parent.parent
 SQL_DIR = ROOT / "sql"
 
@@ -80,6 +78,13 @@ def strip_comments(sql: str) -> str:
 
 @contextmanager
 def connect(database: str | None = None, autocommit: bool = True):
+    # pymssql 刻意延後到這裡才匯入：本模組的另一半（批次切分、脈絡批次辨識）
+    # 是純文字處理，不該為了驗那半邊而要求安裝資料庫驅動。
+    # 這不是潔癖——CI 的可攜性關卡只裝 pytest，模組層 import 會讓它整個收集失敗
+    # （2026-08-10 CI 當場抓到；本機 .venv 裡有 pymssql 所以看不出來，
+    #  與 Airflow DagBag 那次是同一種「本機環境掩蓋的錯」）。
+    import pymssql
+
     kwargs = dict(CONN)
     if database:
         kwargs["database"] = database
