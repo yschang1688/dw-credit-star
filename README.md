@@ -184,7 +184,7 @@ terraform destroy
 | 效能結構 | 索引 + INCLUDE 欄 | 同左 | 分區裁剪 + 叢集 |
 | SCD Type 2 | 逐月預存程序 MERGE | 同左 | 視窗函數一次算完 |
 | 成本護欄 | 關閉 storage autoscaling ＋預算警示 | serverless auto-pause | 查詢位元組上限 |
-| 免費方案的陷阱 | 規格上限（**開不起來**，明顯） | 額度用完**靜默計費**（危險） | Sandbox 不支援 DML——改用 incremental 就得啟用計費 |
+| 免費方案的陷阱 | 規格上限（**開不起來**，明顯） | 需信用卡；額度用完的行為可選，**危險的是不可逆的 BillOverUsage** | 免信用卡，但 Sandbox 不支援 DML——改用 incremental 就得啟用計費 |
 | 成本上限的**硬度** | 軟（預算警示只通知、不阻擋） | 軟（同左） | **硬**（Sandbox 無計費帳戶，不可能產生帳單） |
 
 **能跨三家的不是 SQL，是綱要與驗收條件。** 星狀綱要、粒度宣告、SCD2 的追蹤欄位、
