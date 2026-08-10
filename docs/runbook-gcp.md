@@ -33,16 +33,34 @@ BigQuery 不是——它沒有 `IDENTITY`、沒有叢集索引、預存程序語
 
 | 項目 | 說明 |
 |---|---|
-| Google 帳號 | BigQuery Sandbox **免信用卡**；每月 1 TB 查詢免費額度 |
+| Google 帳號 | BigQuery Sandbox **免信用卡、免計費帳戶**（見下表）|
 | gcloud CLI | `brew install --cask google-cloud-sdk`，`gcloud init` |
 | 應用程式預設憑證 | `gcloud auth application-default login`——**不要下載服務帳號金鑰檔**，那是最常見的外洩來源 |
 | dbt | `python -m venv .venv-dbt && ./.venv-dbt/bin/pip install "dbt-bigquery>=1.9"` |
 
-Sandbox 的三個限制要先知道，免得誤判成 bug：
+### Sandbox 的限制（查證於官方文件，2026-08-10）
 
-- 所有資料表 **60 天後自動過期**，且不能設更長 —— 對短命環境正好
-- 每月 1 TB 查詢額度；本專案全量重建掃描 **< 100 MB**
-- profiles 有 `maximum_bytes_billed: 1 GB`：跑錯查詢時**直接失敗**而不是產生帳單
+| 限制 | 值 | 對本專案的影響 |
+|---|---|---|
+| 信用卡／計費帳戶 | **不需要** | 這是唯一真正的**硬性**成本上限——沒有計費帳戶就不可能產生帳單 |
+| 作用中儲存 | 10 GB／月 | 18 萬列事實表 + 維度遠低於此 |
+| 查詢處理量 | 1 TB／月 | 全量重建掃描 < 100 MB |
+| 資料表過期 | **60 天後自動過期，且不能設更長** | 對短命環境正好；但別把它當備份 |
+| **不支援 DML** | `INSERT`／`UPDATE`／`DELETE`／`MERGE` | **見下方警告** |
+| 不支援串流插入、Data Transfer Service | — | 本專案都沒用到 |
+
+> ⚠️ **不支援 DML 這條會直接決定 dbt 能不能跑。**
+> 本專案的模型全部是 `view` 與 `table` 兩種 materialization，產生的是
+> `CREATE OR REPLACE VIEW／TABLE ... AS SELECT`——那是 **DDL，Sandbox 支援**。
+> seed 走載入作業，也不是 DML。所以現況可以在 Sandbox 上跑完。
+>
+> **但只要有人把任何模型改成 `incremental`，dbt 就會產生 `MERGE`，在 Sandbox 上直接失敗。**
+> 真要做增量，就得啟用計費帳戶——而那一刻起「不可能產生帳單」的保證就沒了。
+> 這個取捨要自覺地做，不要在某次 refactor 裡順手改掉。
+
+`profiles.yml.example` 另設 `maximum_bytes_billed: 1 GB`：即使日後啟用計費，
+跑錯查詢也會**直接失敗**而不是產生帳單。這是第二層護欄，不是第一層——
+第一層永遠是「不啟用計費帳戶」。
 
 ---
 
@@ -71,7 +89,7 @@ export DBT_PROFILES_DIR=.
 
 ../.venv-dbt/bin/dbt seed      # 五張參考維度（與 SQL Server 版同源匯出）
 ../.venv-dbt/bin/dbt run       # 5 個模型
-../.venv-dbt/bin/dbt test      # 34 項測試，對應 SQL Server 版的 dq 規則
+../.venv-dbt/bin/dbt test      # 36 項測試，對應 SQL Server 版的 dq 規則
 ```
 
 預期：`fact_monthly_statement` 180,000 列、`fact_default_outcome` 30,000 列、
@@ -124,7 +142,8 @@ bq ls --datasets "${PROJECT}"     # 實查：兩個 dataset 都不在
 | 代理鍵 | IDENTITY | IDENTITY | 確定性雜湊 |
 | 效能結構 | 索引 | 索引 | 分區＋叢集 |
 | 成本護欄 | 關閉 autoscaling ＋預算警示 | serverless auto-pause | 查詢位元組上限 |
-| 免費方案的陷阱 | 規格上限（開不起來，明顯） | 額度用完靜默計費（危險） | 表 60 天過期（對短命環境無害） |
+| 免費方案的陷阱 | 規格上限（開不起來，明顯） | 額度用完**靜默計費**（危險） | Sandbox 不支援 DML——改用 incremental 就得啟用計費 |
+| 成本上限的**硬度** | 軟（預算警示只通知，不阻擋） | 軟（同左） | **硬**（沒有計費帳戶就不可能產生帳單） |
 
 一句話：**能跨三家的不是 SQL，是綱要與驗收條件。**
 把「不一樣的地方」收斂到一個明確介面（`DW_PLATFORM` ＋環境變數 ＋ dbt 模型層），
