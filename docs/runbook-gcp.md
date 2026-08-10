@@ -34,9 +34,28 @@ BigQuery 不是——它沒有 `IDENTITY`、沒有叢集索引、預存程序語
 | 項目 | 說明 |
 |---|---|
 | Google 帳號 | BigQuery Sandbox **免信用卡、免計費帳戶**（見下表）|
-| gcloud CLI | `brew install --cask google-cloud-sdk`，`gcloud init` |
+| gcloud CLI | 見下方「gcloud 只為了一件事」 |
 | 應用程式預設憑證 | `gcloud auth application-default login`——**不要下載服務帳號金鑰檔**，那是最常見的外洩來源 |
-| dbt | `python -m venv .venv-dbt && ./.venv-dbt/bin/pip install "dbt-bigquery>=1.9"` |
+| dbt | `python -m venv .venv-dbt && ./.venv-dbt/bin/pip install "dbt-bigquery>=1.9" pandas pyarrow` |
+
+### gcloud 只為了一件事：取得 ADC
+
+`dbt-bigquery` 與本專案的載入腳本都走 REST API（`google-cloud-bigquery`），
+**不需要 `bq` CLI**。CLI 唯一不可取代的用途是 `gcloud auth application-default login`
+——它會開瀏覽器讓你用 Google 帳號登入，把憑證寫到本機。
+
+所以 `bq load` 被 [`etl/load_bigquery.py`](../etl/load_bigquery.py) 取代，
+附帶好處是**綱要在程式裡寫死而不是靠 `--autodetect` 猜**：
+autodetect 猜錯型別不會報錯，只會讓下游 `cast` 悄悄產生 NULL。
+金額欄一律 `NUMERIC` 不用 `FLOAT64`——這是錢，浮點誤差在單筆看不出來，
+在 18 萬列的 `SUM` 上就會跟 SQL Server 版的 `DECIMAL(14,2)` 對不起來，
+而對帳對不起來時你會先懷疑邏輯、最後才想到型別。
+
+> **macOS 安裝踩點（2026-08-10 實測）**：`brew install --cask google-cloud-sdk` 會在
+> 內部的 pip 步驟失敗（`Failed to resolve 'github.com'`）然後把安裝**整個 purge 掉**，
+> 而同一台機器上 `curl`／`pip` 直連完全正常——是 cask 安裝程序的巢狀環境問題。
+> 改用官方安裝方式（`https://cloud.google.com/sdk/docs/install-sdk` 的 macOS 版），
+> 或只裝 `gcloud` 本體後略過 CLI 的其他元件。
 
 ### Sandbox 的限制（查證於官方文件，2026-08-10）
 
@@ -69,14 +88,16 @@ BigQuery 不是——它沒有 `IDENTITY`、沒有叢集索引、預存程序語
 兩邊必須吃**同一份 export**，否則對帳比的是兩份資料而不是兩套實作。
 
 ```bash
-# 產出與 SQL Server 版同源的 CSV 快照
-./.venv/bin/python etl/export_source_csv.py     # 產生 data/credit_clients.csv
+# 產出與 SQL Server 版同源的 CSV 快照（若 data/source_credit_clients.csv 已存在可略過）
+./.venv/bin/python etl/export_source_csv.py
 
-PROJECT=$(gcloud config get-value project)
-bq --location=asia-east1 mk --dataset "${PROJECT}:credit_dw_raw"
-bq load --source_format=CSV --autodetect --replace \
-  "${PROJECT}:credit_dw_raw.credit_clients" data/credit_clients.csv
+# 建 dataset + 載入（明確綱要，不用 autodetect）
+./.venv-dbt/bin/python etl/load_bigquery.py --project <PROJECT_ID> --location asia-east1
 ```
+
+腳本會驗證載入列數與來源一致（30,000），不一致就直接失敗。
+來源的目標欄 `default` 會改名為 `default_next_month`——與 SQL Server 版的暫存層一致，
+且 `default` 是 SQL 保留字，留著會逼得每個查詢都要跳脫。
 
 ---
 
@@ -123,10 +144,10 @@ bq query --use_legacy_sql=false < target/compiled/dw_credit_star/analyses/reconc
 Sandbox 的表 60 天自動過期，但別依賴那個：
 
 ```bash
-bq rm -r -f --dataset "${PROJECT}:credit_dw"
-bq rm -r -f --dataset "${PROJECT}:credit_dw_raw"
-bq ls --datasets "${PROJECT}"     # 實查：兩個 dataset 都不在
+./.venv-dbt/bin/python etl/load_bigquery.py --project <PROJECT_ID> --teardown
 ```
+
+腳本刪完會**列出帳戶內剩餘的 dataset**——空的才回傳 0。
 
 同 AWS／Azure 的紀律：**「指令沒報錯」與「雲端帳戶裡沒有東西」是兩件事**。
 
