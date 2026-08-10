@@ -27,10 +27,34 @@
 3. **`terraform destroy` 後實查歸零**（見第 4 節）。這一層不能省——
    前兩層只是讓「忘了拆」的代價變小，沒有讓它變成零。
 
-> ⚠️ Azure 的「免費」有兩種，別搞混：新帳號 30 天 $200 額度（過期就收費），
-> 以及 SQL Database Free Offer（每月 10 萬 vCore 秒 + 32 GB，**一個訂閱只能有一個**）。
-> 本設定**不依賴 Free Offer**——它用完會靜默轉為計費，那正是最容易長出帳單的形態。
-> 改用 auto-pause 控成本，理由寫在 `infra/azure/variables.tf`。
+### Azure 沒有 BigQuery Sandbox 的等價物（查證於官方文件，2026-08-11）
+
+| | GCP BigQuery Sandbox | Azure |
+|---|---|---|
+| 信用卡 | **不需要** | **必要**（可用非預付簽帳金融卡；會有 $1 暫時授權） |
+| 成本上限的硬度 | **硬**（沒有計費帳戶＝不可能產生帳單） | 軟（卡已在檔，靠設定與紀律） |
+| 額度形態 | 每月 1 TB 查詢／10 GB 儲存 | SQL DB Free Offer：每月 10 萬 vCore 秒＋32 GB 資料＋32 GB 備份 |
+| 期限 | 表 60 天過期 | **訂閱終身、每月重置**，每訂閱最多 10 個資料庫 |
+
+**2026-08-11 更正**：本文件先前寫「Free Offer 用完會靜默轉為計費」——**那是錯的**。
+Free Offer 有明確的 `Behavior when free limit reached` 設定，兩個選項：
+`AutoPause`（用完暫停到下個月，**建立時的預設**）與 `BillOverUsage`（超量計費，
+**不可逆**）。官方原話：「You will not incur any charges unless you exceed these
+allowances **and you opt to pay** for usage beyond the free limits」。
+
+**但 Terraform 吃不到 Free Offer**：azurerm provider 沒有 `use_free_limit`／
+`free_limit_exhaustion_behavior`（已 grep provider 自己的文件確認，只有
+`auto_pause_delay_in_minutes`）。要用 Free Offer 就得走混合式——
+Terraform 建資源群組／邏輯伺服器／防火牆，資料庫改用 CLI：
+
+```bash
+az sql db create -g rg-dw-credit-star -s <SERVER> -n CreditRiskDW \
+  --use-free-limit --free-limit-exhaustion-behavior AutoPause
+```
+
+本目錄的 Terraform 預設走「serverless + auto-pause」（成本靠閒置歸零而非免費額度），
+兩條路都留著，選哪條看你要不要多一個 CLI 步驟。**IaC 覆蓋不到的地方寫出來，
+不假裝 Terraform 全包**——那是這份 runbook 比「跑得起來」更該傳達的東西。
 
 ---
 
