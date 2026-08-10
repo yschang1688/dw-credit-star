@@ -1,0 +1,8 @@
+education_key,education_code,education_desc,is_documented
+1,1,研究所,True
+2,2,大學,True
+3,3,高中,True
+4,4,其他,True
+5,0,未定義碼值 0,False
+6,5,未定義碼值 5,False
+7,6,未定義碼值 6,False

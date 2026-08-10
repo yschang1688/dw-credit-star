@@ -18,7 +18,8 @@ import pandas as pd
 import pymssql
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from db import DATABASE, SQL_DIR, connect, new_batch_id, query, run_script, scalar  # noqa: E402
+from db import (DATABASE, DB_PROVISIONED_EXTERNALLY, SQL_DIR, connect,  # noqa: E402
+                new_batch_id, query, run_script, scalar)
 
 SOURCE_REPO = Path.home() / "credit-risk-decision-policy"
 
@@ -81,8 +82,11 @@ def main() -> int:
     print(f"批次 {batch_id}\n")
 
     print("[1/5] 套用綱要與參考資料")
-    for f in ("01_schema.sql",):
-        run_script(SQL_DIR / f)
+    # 第一支腳本在 sqlserver 平台上要先不指定資料庫（它自己 CREATE DATABASE 再 USE）；
+    # 資料庫由 IaC 建立的平台（Azure SQL Database）則從頭就連進去，
+    # 那兩種批次會被 db.run_script 略過並印出來。
+    run_script(SQL_DIR / "01_schema.sql",
+               database=DATABASE if DB_PROVISIONED_EXTERNALLY else None)
     for f in ("02_reference_data.sql", "03_procedures.sql", "04_quality_checks.sql"):
         run_script(SQL_DIR / f, database=DATABASE)
 

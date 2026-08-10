@@ -156,7 +156,9 @@ Message: Unable to create a new asynchronous I/O context. Please increase sysctl
 
 **誠實邊界**：Azure SQL Edge 是 SQL Server 的子集，**不含 SSIS**。本專案以 T-SQL 預存程序實作 ETL 邏輯——抽取、轉換、載入、批次控制、錯誤處理等概念相通，但 SSIS 是圖形化工具且僅 Windows，兩者不是同一個東西。
 
-## 也在 AWS RDS for SQL Server 上跑過
+## 三朵雲的可攜性
+
+### AWS RDS for SQL Server（已實跑）
 
 同一套綱要與 ETL，**未改任何一行程式碼**，在 AWS RDS for SQL Server Express（SQL Server 2022）上完整跑完一次——連線參數本來就走環境變數，換環境只需換變數。基礎設施以 Terraform 定義（`infra/aws/`），流程是 **apply → 跑 ETL → 存證 → destroy**：這個專案不需要常駐，用完即銷毀，整趟成本在 US$1 以內。
 
@@ -170,13 +172,78 @@ terraform destroy
 
 搭配的最小權限 IAM 政策在 `infra/aws/iam-policy-terraform-rds.json`，兩個刻意的收斂：非指定區域的 API 一律 Deny，唯一的 IAM 寫入權限鎖死到 RDS 服務連結角色那一條路徑。完整操作與踩坑紀錄見 **[docs/runbook-aws.md](docs/runbook-aws.md)**。
 
-**誠實邊界**：免費方案帳號只能開最小規格 `db.t3.micro`，而 t3 的 CPU 積分會在載入途中耗盡，吞吐從 250 列/秒掉到 13 列/秒——這趟 18 萬列實際跑了約 5 小時而非十幾分鐘。升級規格會被 `FreeTierRestrictionError` 擋下，需轉付費方案。這是機型與方案的限制，不是設定問題，但排程時要據實預留時間。
+
+### 三朵雲擺在一起，差異才是重點
+
+| | AWS RDS | Azure SQL Database | BigQuery |
+|---|---|---|---|
+| 引擎 | SQL Server | SQL Server | 專有欄式 |
+| T-SQL 可攜性 | **原封不動** | 略過 2 種批次（資料庫由 IaC 建立） | **不可攜，重新表達成 dbt 模型** |
+| 資料庫的資源粒度 | 執行個體內的物件 | 資源本身 | dataset |
+| 代理鍵 | `IDENTITY` | `IDENTITY` | 確定性雜湊（重建後不變，兩次跑的事實表可逐列比對） |
+| 效能結構 | 索引 + INCLUDE 欄 | 同左 | 分區裁剪 + 叢集 |
+| SCD Type 2 | 逐月預存程序 MERGE | 同左 | 視窗函數一次算完 |
+| 成本護欄 | 關閉 storage autoscaling ＋預算警示 | serverless auto-pause | 查詢位元組上限 |
+| 免費方案的陷阱 | 規格上限（**開不起來**，明顯） | 額度用完**靜默計費**（危險） | 表 60 天過期（對短命環境無害） |
+
+**能跨三家的不是 SQL，是綱要與驗收條件。** 星狀綱要、粒度宣告、SCD2 的追蹤欄位、
+12 條品質規則的語意、風險分層的違約率——這五樣在三邊必須一致；
+代理鍵、區間端點慣例、SCD2 的算法、效能結構則各隨引擎。
+差異被收斂到一個明確介面（`DW_PLATFORM` ＋環境變數 ＋ dbt 模型層），每一項都寫清楚為什麼。
+
+跨引擎對帳查詢在 [`dbt/analyses/reconcile_with_sqlserver.sql`](dbt/analyses/reconcile_with_sqlserver.sql)：
+比列數、比每個客戶每個月落在哪一個 SCD2 版本、比風險分層的違約率；
+**不比**代理鍵的值與區間端點數字——那兩項本來就不同，比它們只會比出「實作不同」。
+
+### Azure SQL Database（`infra/azure/`、[runbook](docs/runbook-azure.md)）
+
+Terraform 定義資源群組、邏輯伺服器、資料庫與單一 IP 防火牆規則；
+成本護欄是 serverless auto-pause（閒置一小時歸零運算費），
+`variables.tf` 有 validation 擋住停用 auto-pause。
+
+結構差異只有一處但很關鍵：**Azure SQL Database 的資料庫本身就是一個資源**，
+由 Terraform 建立，T-SQL 端的 `CREATE DATABASE`／`USE` 反而是語法錯誤。
+`etl/db.py` 以 `DW_PLATFORM=azure-sql` 在送出前略過那兩種批次並印出略過數，不靜默。
+刻意**不維護第二份 SQL**——兩份 SQL 會漂移，而漂移不會有錯誤訊息。
+
+> **踩過的坑**：第一版的批次比對沒先剝註解，而 `01_schema.sql` 檔頭有整段區塊註解，
+> 於是 `USE CreditRiskDW` 照送、**後續 DDL 全部落到另一個資料庫**——
+> 症狀是 `dim_date` 主鍵重複，完全指不到真因。回歸測試見 `tests/test_portability.py`。
+
+### BigQuery（`dbt/`、[runbook](docs/runbook-gcp.md)）
+
+唯一不能照搬 T-SQL 的一朵。改以 dbt 重新表達：5 個模型、5 張參考維度 seed、
+36 項測試對應 SQL Server 版的品質規則。**刻意不裝 dbt_utils／dbt_expectations**——
+那要 `dbt deps` 拉網路，而完整重現是本專案的賣點，需要的四個通用測試自己寫不到 40 行。
+
+最值得看的是 SCD Type 2：SQL Server 版逐月呼叫預存程序、順序錯了版本區間就錯
+（Airflow DAG 把六個月串成單鏈就是為此）；BigQuery 版用 `LAG`／`LEAD` 一次算完，
+**沒有迴圈就沒有「月份順序」這個失敗模式**——順序性被編碼在 `ORDER BY` 裡。
+代價也要說：集合式必須看得到全部歷史才算得對區間，真實系統的增量載入用這個寫法得整表重算。
+
+### ⚠️ 實跑狀態
+
+| 雲 | 狀態 |
+|---|---|
+| AWS RDS | ✅ **已實跑**：18 萬列、51,110 個 SCD2 版本、拆除後資源實查歸零，整趟 US$1 內（存證見 `docs/evidence/`） |
+| Azure SQL Database | ⚠️ **IaC 與可攜層完成，雲端實跑未執行**。可攜層已在本機同引擎（Azure SQL Edge）以 `DW_PLATFORM=azure-sql` 端到端驗過：180,000 / 51,110 / 30,000 與預設模式逐項相同。Terraform 通過 `validate` 與 `fmt`，尚未 `apply` |
+| BigQuery | ⚠️ **dbt 專案完成，雲端實跑未執行**。`dbt parse`／`dbt list` 通過（此二命令不連線），模型與測試齊全；尚未 `dbt run` |
+
+Azure 與 BigQuery 需要對應的雲端帳號才能 `apply`／`run`。在真正跑過並留下存證之前，
+本專案**不宣稱**「已在三朵雲上運行」——能宣稱的是「可攜層已完成並在同引擎上驗證」。
+
+**AWS 的誠實邊界**：免費方案帳號只能開最小規格 `db.t3.micro`，而 t3 的 CPU 積分會在載入途中耗盡，吞吐從 250 列/秒掉到 13 列/秒——這趟 18 萬列實際跑了約 5 小時而非十幾分鐘。升級規格會被 `FreeTierRestrictionError` 擋下，需轉付費方案。這是機型與方案的限制，不是設定問題，但排程時要據實預留時間。
 
 ## 專案結構
 
 ```
 infra/aws/                   Terraform：RDS、安全群組、子網路群組 + 最小權限 IAM 政策
-docs/runbook-aws.md          雲端部署 runbook（開／跑／拆 + 已知踩點）
+infra/azure/                 Terraform：資源群組、邏輯伺服器、serverless 資料庫、單一 IP 防火牆
+dbt/                         BigQuery 版的同一份倉儲（模型／seed／測試／跨引擎對帳查詢）
+tests/                       跨雲可攜的守門測試（批次切分與資料庫脈絡批次的辨識）
+docs/runbook-aws.md          AWS 部署 runbook（開／跑／拆 + 已知踩點）
+docs/runbook-azure.md        Azure 部署 runbook（含與 AWS 的結構差異對照）
+docs/runbook-gcp.md          BigQuery／dbt runbook（什麼准變、什麼不准變）
 docs/evidence/               雲端實跑存證（ETL log、組態、驗證、拆除查核）
 sql/01_schema.sql            綱要 DDL（含反依賴 teardown，可重複執行）
 sql/02_reference_data.sql    參考維度種子 + 12 條品質規則登錄

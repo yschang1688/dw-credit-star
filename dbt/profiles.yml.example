@@ -1,0 +1,21 @@
+# 複製到 ~/.dbt/profiles.yml（或以 DBT_PROFILES_DIR 指到本目錄）後填入。
+# 本檔只有範例值，實際的 profiles.yml 不進版控。
+dw_credit_star:
+  target: sandbox
+  outputs:
+    sandbox:
+      type: bigquery
+      # oauth＝用 gcloud auth application-default login 的憑證，
+      # 不需要下載服務帳號金鑰檔——金鑰檔是最常見的外洩來源，能不下載就不下載。
+      method: oauth
+      project: your-gcp-project-id
+      dataset: credit_dw           # BigQuery 的 dataset 對應 SQL Server 的 database
+      location: asia-east1
+      threads: 4
+      timeout_seconds: 600
+      priority: interactive
+      # BigQuery Sandbox（免信用卡）限制：
+      #   - 每月 1 TB 查詢免費額度；本專案全量重建約掃描 < 100 MB
+      #   - 所有資料表 60 天後自動過期，且不能設定更長——短命環境正好
+      #   - 不支援 DML 的部分配額，但本專案用的都在允許範圍內
+      maximum_bytes_billed: 1073741824   # 1 GB 上限，跑錯查詢時直接失敗而不是產生帳單

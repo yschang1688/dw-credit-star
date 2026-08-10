@@ -1,0 +1,6 @@
+target/
+dbt_packages/
+logs/
+# 實際的 profiles.yml 含專案 ID 與 dataset，只提交 .example
+profiles.yml
+.user.yml

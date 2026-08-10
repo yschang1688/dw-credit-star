@@ -1,0 +1,5 @@
+# 複製成 terraform.tfvars 後填入。terraform.tfvars 已 gitignore。
+subscription_id = "00000000-0000-0000-0000-000000000000" # az account show --query id -o tsv
+allowed_ip      = "203.0.113.5"                          # curl -s https://api.ipify.org
+# location           = "southeastasia"
+# auto_pause_minutes = 60

@@ -83,3 +83,57 @@ jobs:
               sys.exit(f"teardown 順序錯誤：事實表必須全部先於維度表被 DROP\n{drops}")
           print(f"✓ teardown 反依賴順序正確（{len(drops)} 張表）")
           PY
+
+  portability:
+    # 跨雲可攜的判斷寫鬆或寫緊，症狀都不是「你連錯資料庫了」：
+    # 寫緊 → USE 照送，後續 DDL 全部落到另一個資料庫（實跑踩過，錯誤訊息是主鍵重複）；
+    # 寫鬆 → 含 USE 字樣的真 DDL 被整批丟掉，綱要少一塊卻毫無錯誤。
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+      - run: pip install pytest
+      - run: python -m pytest tests/ -q
+
+  dbt-project:
+    # BigQuery 版是同一份倉儲的第三種實作。這一關不連線（dbt parse 不需要憑證），
+    # 只確保專案結構、Jinja 與測試定義沒壞——那是沒有 GCP 帳號也驗得到的部分。
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+      - run: pip install "dbt-bigquery>=1.9"
+      - name: dbt 專案可解析，且核心模型與測試都在
+        working-directory: dbt
+        env:
+          DBT_PROFILES_DIR: .
+        run: |
+          cp profiles.yml.example profiles.yml
+          sed -i 's/your-gcp-project-id/ci-parse-only/' profiles.yml
+          dbt parse
+          dbt list --resource-type model > /tmp/models.txt
+          dbt list --resource-type test  > /tmp/tests.txt
+          python - <<'PY2'
+          import sys
+          models = open("/tmp/models.txt").read()
+          tests = open("/tmp/tests.txt").read()
+          for m in ("marts.dim_customer", "marts.fact_monthly_statement",
+                    "marts.fact_default_outcome", "staging.stg_monthly_snapshot"):
+              if m not in models:
+                  sys.exit(f"缺少模型 {m}")
+          # 粒度守衛與 SCD2 兩條是倉儲正確性的核心，掉了不會有人發現
+          for t in ("unique_combination_of_columns_fact_monthly_statement_client_id__date_key",
+                    "scd2_no_overlapping_versions_dim_customer_",
+                    "dbt_utils_free_exactly_one_current_dim_customer_",
+                    "expect_row_count_fact_monthly_statement_180000"):
+              if t not in tests:
+                  sys.exit(f"缺少測試 {t}")
+          print(f"✓ dbt 專案解析成功；{len(models.strip().splitlines())} 個模型、"
+                f"{len(tests.strip().splitlines())} 項測試，核心守衛齊全")
+          PY2

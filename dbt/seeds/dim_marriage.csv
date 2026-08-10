@@ -1,0 +1,5 @@
+marriage_key,marriage_code,marriage_desc,is_documented
+1,1,已婚,True
+2,2,單身,True
+3,3,其他,True
+4,0,未定義碼值 0,False

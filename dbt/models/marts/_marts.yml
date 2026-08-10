@@ -1,0 +1,91 @@
+version: 2
+
+models:
+  - name: dim_customer
+    description: |
+      客戶維度（SCD Type 2）。BigQuery 版以視窗函數一次算完全部版本，
+      語意與 SQL Server 版的逐月預存程序相同，執行形態相反。
+    columns:
+      - name: customer_sk
+        description: 確定性代理鍵（FARM_FINGERPRINT(client_id|valid_from_date)）；全量重建後不變。
+        tests: [not_null, unique]
+      - name: client_id
+        description: 業務主鍵（自然鍵）。同一客戶會有多個版本，故此欄不唯一。
+        tests: [not_null]
+      - name: risk_tier
+        description: SCD2 的追蹤欄位；變更即開新版本。
+        tests:
+          - not_null
+          - accepted_values:
+              arguments: {values: ['LOW', 'MEDIUM', 'HIGH']}
+      - name: valid_from_date
+        tests: [not_null]
+      - name: valid_to_date
+        tests: [not_null]
+    tests:
+      # 對應 SQL Server 版 dq 規則 SCD2_ONE_CURRENT：每個客戶恰好一個當前版本。
+      # 這條壞掉不會有錯誤訊息，只會讓「當前狀態」的查詢回傳重複列。
+      - dbt_utils_free_exactly_one_current
+      # 對應 SCD2_NO_OVERLAP：同一客戶的版本區間不得重疊。
+      - scd2_no_overlapping_versions
+
+  - name: fact_monthly_statement
+    description: 月度帳單事實；粒度為客戶 × 月。
+    columns:
+      - name: statement_sk
+        tests: [not_null, unique]
+      - name: customer_sk
+        description: 必須接到**當月有效**的維度版本，不是當前版本。
+        tests:
+          - not_null
+          - relationships:
+              arguments: {to: ref('dim_customer'), field: customer_sk}
+      - name: date_key
+        tests:
+          - not_null
+          - relationships:
+              arguments: {to: ref('dim_date'), field: date_key}
+      - name: bill_amount
+        tests: [not_null]
+      - name: payment_amount
+        tests:
+          - not_null
+          # 對應 FACT_NEG_PAYMENT：繳款金額不得為負
+          - dbt_expectations_free_non_negative
+    tests:
+      # 對應 FACT_GRAIN：粒度守衛。宣告粒度是星狀綱要的第一件事，
+      # 也是唯一一條「違反了什麼都不會壞、只是每個彙總都悄悄變成兩倍」的規則。
+      - unique_combination_of_columns:
+          arguments:
+            columns: [client_id, date_key]
+      # 對應 FACT_ROWCOUNT：30,000 客戶 × 6 月
+      - expect_row_count:
+          arguments:
+            count: 180000
+
+  - name: fact_default_outcome
+    description: 違約結果事實；粒度為客戶（與帳單事實分表，否則違約旗標會被重複計算六次）。
+    columns:
+      - name: outcome_sk
+        tests: [not_null, unique]
+      - name: client_id
+        tests: [not_null, unique]
+      - name: is_default
+        tests:
+          - not_null
+          - accepted_values:
+              arguments: {values: [0, 1]}
+    tests:
+      # 對應 OUTCOME_COVERAGE：每個客戶都要有結果列
+      - expect_row_count:
+          arguments:
+            count: 30000
+
+seeds:
+  - name: dim_date
+    description: 日期維度。source_month_ix 1=最近月…6=最早月、7=結果月。
+    columns:
+      - name: date_key
+        tests: [not_null, unique]
+      - name: source_month_ix
+        tests: [not_null, unique]

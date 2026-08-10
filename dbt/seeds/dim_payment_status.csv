@@ -1,0 +1,13 @@
+pay_status_key,pay_status_code,documented_desc,common_reading,is_delinquent,delinquent_months
+1,-2,,當期無消費（推論）,False,
+2,-1,按時繳款,按時繳清,False,
+3,0,,使用循環信用（推論）,False,
+4,1,延遲 1 個月,延遲 1 個月,True,1
+5,2,延遲 2 個月,延遲 2 個月,True,2
+6,3,延遲 3 個月,延遲 3 個月,True,3
+7,4,延遲 4 個月,延遲 4 個月,True,4
+8,5,延遲 5 個月,延遲 5 個月,True,5
+9,6,延遲 6 個月,延遲 6 個月,True,6
+10,7,延遲 7 個月,延遲 7 個月,True,7
+11,8,延遲 8 個月,延遲 8 個月,True,8
+12,9,延遲 9 個月以上,延遲 9 個月以上,True,9

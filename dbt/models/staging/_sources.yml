@@ -1,0 +1,22 @@
+version: 2
+
+sources:
+  - name: raw
+    description: |
+      來源落地層。與 SQL Server 版的 `stg.credit_clients` 同構：
+      UCI「default of credit card clients」的**橫斷面寬表**，一列一個客戶，
+      六個月的帳單／繳款攤成 18 個欄位。
+
+      載入方式見 `docs/runbook-gcp.md`：以 `bq load` 從同一份 CSV 快照載入，
+      與 SQL Server 版走的是**同一個 export**，兩邊才比得起來。
+    schema: "{{ target.dataset }}_raw"
+    tables:
+      - name: credit_clients
+        columns:
+          - name: client_id
+            tests: [not_null, unique]
+          - name: default_next_month
+            tests:
+              - accepted_values:
+                  arguments:
+                    values: [0, 1]

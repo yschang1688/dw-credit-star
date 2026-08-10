@@ -1,0 +1,33 @@
+name: dw_credit_star
+version: "1.0.0"
+config-version: 2
+profile: dw_credit_star
+
+model-paths: ["models"]
+seed-paths: ["seeds"]
+macro-paths: ["macros"]
+analysis-paths: ["analyses"]
+target-path: "target"
+clean-targets: ["target", "dbt_packages"]
+
+# 這個專案是 SQL Server 版倉儲的 BigQuery 對照實作。
+# 語意必須一致，實作刻意不同——差異本身就是要展示的東西（見 dbt/README.md）。
+models:
+  dw_credit_star:
+    +persist_docs:
+      relation: true
+      columns: true
+    staging:
+      +materialized: view          # 暫存層薄，用 view 省儲存與維護
+      +schema: stg
+    marts:
+      +materialized: table
+      +schema: dw
+
+seeds:
+  dw_credit_star:
+    +schema: dw
+    dim_date:
+      +column_types:
+        date_key: INT64
+        month_end_date: DATE
