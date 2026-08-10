@@ -68,10 +68,18 @@ autodetect 猜錯型別不會報錯，只會讓下游 `cast` 悄悄產生 NULL�
 | **不支援 DML** | `INSERT`／`UPDATE`／`DELETE`／`MERGE` | **見下方警告** |
 | 不支援串流插入、Data Transfer Service | — | 本專案都沒用到 |
 
-> ⚠️ **不支援 DML 這條會直接決定 dbt 能不能跑。**
+> ⚠️ **不支援 DML 這條會直接決定 dbt 能不能跑（2026-08-10 實測確認，非引用文件）**：
+>
+> ```
+> DDL (CREATE OR REPLACE TABLE AS SELECT) : 可用
+> DML (UPDATE)  : 403 Billing has not been enabled ... DML queries are not allowed in the free tier.
+> DML (MERGE)   : 同上
+> ```
+>
 > 本專案的模型全部是 `view` 與 `table` 兩種 materialization，產生的是
 > `CREATE OR REPLACE VIEW／TABLE ... AS SELECT`——那是 **DDL，Sandbox 支援**。
-> seed 走載入作業，也不是 DML。所以現況可以在 Sandbox 上跑完。
+> seed 走載入作業，也不是 DML——**`dbt seed` 的日誌會印 `INSERT n`，那是 dbt 的措辭，
+> 實際送的是載入作業**，別被它誤導成「Sandbox 其實支援 DML」。所以現況可以跑完。
 >
 > **但只要有人把任何模型改成 `incremental`，dbt 就會產生 `MERGE`，在 Sandbox 上直接失敗。**
 > 真要做增量，就得啟用計費帳戶——而那一刻起「不可能產生帳單」的保證就沒了。
@@ -110,11 +118,21 @@ export DBT_PROFILES_DIR=.
 
 ../.venv-dbt/bin/dbt seed      # 五張參考維度（與 SQL Server 版同源匯出）
 ../.venv-dbt/bin/dbt run       # 5 個模型
-../.venv-dbt/bin/dbt test      # 36 項測試，對應 SQL Server 版的 dq 規則
+../.venv-dbt/bin/dbt test      # 34 項測試，對應 SQL Server 版的 dq 規則
 ```
 
-預期：`fact_monthly_statement` 180,000 列、`fact_default_outcome` 30,000 列、
-`dim_customer` 的版本數與 SQL Server 版一致。
+實跑結果（2026-08-10）：`fact_monthly_statement` **180,000** 列、
+`fact_default_outcome` **30,000** 列、`dim_customer` **51,110** 個版本——
+與 SQL Server 版逐項相同。seed 10.6 秒、run 12.7 秒、test 5.4 秒。
+
+> **踩過的兩個坑**：
+> 1. `accepted_values` 的值不加 `quote: false`，dbt 會渲染成字串，與 `INT64` 欄位比較
+>    直接報 `No matching signature for operator IN`。BigQuery 是強型別，這在
+>    SQL Server 那邊不會發生。
+> 2. 載入時 pandas 的 `float64` 送不進 `NUMERIC`，會炸
+>    `Got bytestring of length 8 (expected 16)`（float64 8 bytes、decimal128 16 bytes）。
+>    正解是轉 `Decimal`，**不是**把綱要改成 `FLOAT64`——後者能「跑過」，
+>    但那等於為了讓程式不報錯而把錢改成近似值。
 
 > 沒有憑證也能驗到這一步：`dbt parse` 與 `dbt list` **不連線**，
 > 專案結構、Jinja 與測試定義有錯會當場報出來。CI 跑的就是這一關。

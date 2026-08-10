@@ -20,3 +20,4 @@ sources:
               - accepted_values:
                   arguments:
                     values: [0, 1]
+                    quote: false

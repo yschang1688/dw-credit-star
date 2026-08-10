@@ -69,10 +69,18 @@ def main() -> int:
 
     if a.teardown:
         client = bigquery.Client(project=a.project, location=a.location)
-        for ds in (a.dataset, "credit_dw", "credit_dw_stg"):
+        # 列舉後刪除，不要用寫死的名單。
+        #
+        # 第一版就是寫死 ("credit_dw_raw", "credit_dw", "credit_dw_stg")，
+        # 結果漏掉 `credit_dw_dw`——dbt 的 dataset 名是「profile 的 dataset ＋ 模型的
+        # +schema」串出來的（credit_dw + dw），寫死的人（我）用直覺猜了名字。
+        # **實查那一行當場抓到殘留**，這正是「指令沒報錯 ≠ 帳戶裡沒東西」的實例：
+        # 刪除三個都成功、腳本一聲不吭，但雲端還留著一個 dataset。
+        targets = [d.dataset_id for d in client.list_datasets(project=a.project)
+                   if d.dataset_id == a.dataset or d.dataset_id.startswith("credit_dw")]
+        for ds in targets:
             client.delete_dataset(f"{a.project}.{ds}", delete_contents=True, not_found_ok=True)
             print(f"  刪除 {a.project}.{ds}")
-        # 「指令沒報錯」與「雲端帳戶裡沒有東西」是兩件事——只有實查算數
         left = [d.dataset_id for d in client.list_datasets(project=a.project)]
         print(f"實查剩餘 dataset：{left or '（空）'}")
         return 0 if not left else 1
@@ -94,7 +102,21 @@ def main() -> int:
     print(f"dataset {ds_id}（{a.location}）就緒")
 
     schema = build_schema(bigquery)
-    ordered = df[[f.name for f in schema]]
+    ordered = df[[f.name for f in schema]].copy()
+
+    # pandas 的金額欄是 float64，而 BigQuery NUMERIC 對應 arrow 的 decimal128——
+    # 直接送會炸在 `Got bytestring of length 8 (expected 16)`（float64 是 8 bytes、
+    # decimal128 是 16）。轉成 Decimal 才是真的把它當定點數處理。
+    #
+    # 走 str() 而非 Decimal(float)：Decimal(0.1) 會拿到 0.1000000000000000055511151231…，
+    # 那正是「用浮點數存錢」的老問題；先四捨五入到 2 位小數再轉字串才乾淨。
+    # 這一步失敗過一次，才是這段註解存在的理由——換成 FLOAT64 就能「跑過」，
+    # 但那等於為了讓程式不報錯而把錢改成近似值。
+    from decimal import Decimal
+    for f in schema:
+        if f.field_type == "NUMERIC":
+            ordered[f.name] = ordered[f.name].map(
+                lambda v: None if pd.isna(v) else Decimal(f"{round(float(v), 2):.2f}"))
 
     job = client.load_table_from_dataframe(
         ordered,

@@ -74,7 +74,9 @@ models:
         tests:
           - not_null
           - accepted_values:
-              arguments: {values: [0, 1]}
+              # BigQuery 是強型別：值不加 quote: false 會被渲染成字串，
+              # 與 INT64 欄位比較時直接報 "No matching signature for operator IN"
+              arguments: {values: [0, 1], quote: false}
     tests:
       # 對應 OUTCOME_COVERAGE：每個客戶都要有結果列
       - expect_row_count:
