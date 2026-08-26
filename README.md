@@ -198,12 +198,24 @@ terraform destroy
 
 ### Azure SQL Database（`infra/azure/`、[runbook](docs/runbook-azure.md)）
 
-Terraform 定義資源群組、邏輯伺服器、資料庫與單一 IP 防火牆規則；
-成本護欄是 serverless auto-pause（閒置一小時歸零運算費），
-`variables.tf` 有 validation 擋住停用 auto-pause。
+Terraform 定義資源群組、邏輯伺服器與單一 IP 防火牆規則。**資料庫是條件式的**，
+由 `var.use_free_offer` 決定，這個變數本身就是這份 IaC 最誠實的一行：
+
+- **預設 `true`（SQL Database Free Offer）**：每月 10 萬 vCore 秒／32 GB 內為零元，
+  額度用完預設自動暫停，**要計費得自己做一個不可逆的 opt-in**——上限是硬的。
+  代價是**資料庫不由 Terraform 建**：azurerm provider 至今沒有 `use_free_limit`
+  與 `free_limit_exhaustion_behavior`，得用 `az sql db create` 補一步
+  （指令由 `terraform output free_offer_create_command` 產生，不要自己拼）。
+- **`false`**：Terraform 連資料庫一起建，走 `GP_S_Gen5_1` + auto-pause，
+  閒置一小時歸零運算費但儲存費照算——上限是軟的。`variables.tf` 有 validation
+  擋住停用 auto-pause（停用按牌價約 US$227／月）。
+
+**「IaC 覆蓋率」不是全有全無。** 這裡刻意讓覆蓋不到的那一塊出現在**型別**裡
+（一個 bool 變數 ＋ 一個產生指令的 output），而不是只躺在註解裡——
+註解會被跳過，`terraform output` 不會。
 
 結構差異只有一處但很關鍵：**Azure SQL Database 的資料庫本身就是一個資源**，
-由 Terraform 建立，T-SQL 端的 `CREATE DATABASE`／`USE` 反而是語法錯誤。
+由 Terraform 或 CLI 建立，T-SQL 端的 `CREATE DATABASE`／`USE` 反而是語法錯誤。
 `etl/db.py` 以 `DW_PLATFORM=azure-sql` 在送出前略過那兩種批次並印出略過數，不靜默。
 刻意**不維護第二份 SQL**——兩份 SQL 會漂移，而漂移不會有錯誤訊息。
 
@@ -227,7 +239,7 @@ Terraform 定義資源群組、邏輯伺服器、資料庫與單一 IP 防火牆
 | 雲 | 狀態 |
 |---|---|
 | AWS RDS | ✅ **已實跑**：18 萬列、51,110 個 SCD2 版本、拆除後資源實查歸零，整趟 US$1 內（存證見 `docs/evidence/`） |
-| Azure SQL Database | ⚠️ **IaC 與可攜層完成，雲端實跑未執行**。可攜層已在本機同引擎（Azure SQL Edge）以 `DW_PLATFORM=azure-sql` 端到端驗過：180,000 / 51,110 / 30,000 與預設模式逐項相同。Terraform 通過 `validate` 與 `fmt`，尚未 `apply` |
+| Azure SQL Database | ⚠️ **IaC 與可攜層完成，雲端實跑未執行**。可攜層已在本機同引擎（Azure SQL Edge）以 `DW_PLATFORM=azure-sql` 端到端驗過：180,000 / 51,110 / 30,000 與預設模式逐項相同。Terraform 通過 `validate` 與 `fmt`，**尚未 `apply`**；Free Offer 路徑（含 `az sql db create` 那一步）**同樣未對真實 Azure 執行過**，是照官方 CLI 參考寫的 |
 | BigQuery | ✅ **已實跑（2026-08-10，Sandbox 無計費帳戶）**：180,000 / 30,000 / 51,110 與 SQL Server 版逐項相同；34 項 dbt 測試全過；**跨引擎對帳 25 列逐列一致**；拆除後實查剩餘 dataset 為空（存證見 `docs/evidence/gcp/`）|
 
 **Azure 尚未實跑**，需要 Azure 訂閱才能 `apply`；在跑過並留下存證之前不宣稱它。
@@ -241,7 +253,7 @@ IDENTITY vs 確定性雜湊、索引 vs 分區叢集）算出同一份倉儲。
 
 ```
 infra/aws/                   Terraform：RDS、安全群組、子網路群組 + 最小權限 IAM 政策
-infra/azure/                 Terraform：資源群組、邏輯伺服器、serverless 資料庫、單一 IP 防火牆
+infra/azure/                 Terraform：資源群組、邏輯伺服器、單一 IP 防火牆；資料庫條件式（見 use_free_offer）
 dbt/                         BigQuery 版的同一份倉儲（模型／seed／測試／跨引擎對帳查詢）
 tests/                       跨雲可攜的守門測試（批次切分與資料庫脈絡批次的辨識）
 docs/runbook-aws.md          AWS 部署 runbook（開／跑／拆 + 已知踩點）

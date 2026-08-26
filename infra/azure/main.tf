@@ -7,7 +7,20 @@
 #     ETL 側以 DW_PLATFORM=azure-sql 處理，見 etl/db.py。
 #   - RDS 用安全群組限制來源；Azure 用伺服器層防火牆規則。
 #   - RDS 的成本護欄是「關閉 storage autoscaling + 預算警示」；
-#     Azure 的成本護欄是 serverless 的 auto-pause（閒置歸零運算費）。
+#     Azure 的成本護欄有兩種，由 var.use_free_offer 決定（預設走前者）：
+#       (a) Free Offer + AutoPause：每月 10 萬 vCore 秒／32 GB 內為零元，
+#           且「超量計費」需要一個**不可逆的 opt-in**，不選就不可能產生帳單。
+#           上限是硬的——這是預設值的理由。
+#           ⚠ azurerm provider 沒有 use_free_limit／free_limit_exhaustion_behavior
+#           這兩個參數，所以資料庫**不是** Terraform 建的，見本檔末與 runbook。
+#       (b) serverless + auto-pause：閒置歸零運算費，但儲存費照算。
+#           上限是軟的（靠設定與紀律），適合不想多一個 CLI 步驟時。
+
+locals {
+  # 資料庫名稱在兩條路上都要用得到（Terraform 建、或 CLI 建後填進連線字串），
+  # 所以提到 local，不要讓 output 依賴一個可能 count = 0 的資源。
+  database_name = "CreditRiskDW"
+}
 
 resource "azurerm_resource_group" "this" {
   name     = "rg-dw-credit-star"
@@ -59,8 +72,15 @@ resource "azurerm_mssql_firewall_rule" "operator" {
   end_ip_address   = var.allowed_ip
 }
 
+# Free Offer 的資料庫由 az CLI 建立（provider 不支援那兩個參數），所以這個資源
+# 在 use_free_offer = true 時不建。伺服器與資源群組兩條路都需要，故不受 count 影響。
+# destroy 時：CLI 建的資料庫活在這台邏輯伺服器裡，刪伺服器與資源群組會一併帶走它，
+# 但**那是 Azure 的連鎖刪除，不是 Terraform 管的狀態**——所以 runbook 第 4 節的
+# 四項實查不可省，它是這條路唯一的歸零證據。
 resource "azurerm_mssql_database" "dw" {
-  name        = "CreditRiskDW"
+  count = var.use_free_offer ? 0 : 1
+
+  name        = local.database_name
   server_id   = azurerm_mssql_server.this.id
   sku_name    = var.sku_name
   max_size_gb = var.max_size_gb

@@ -3,3 +3,6 @@ subscription_id = "00000000-0000-0000-0000-000000000000" # az account show --que
 allowed_ip      = "203.0.113.5"                          # curl -s https://api.ipify.org
 # location           = "southeastasia"
 # auto_pause_minutes = 60
+# use_free_offer = true   # 預設 true：走 SQL Database Free Offer（硬上限），
+#                         # 資料庫需另用 CLI 建，見 runbook 第 1.1 節。
+#                         # 設 false 則由 Terraform 連資料庫一起建，走一般 serverless 計費。
