@@ -24,8 +24,6 @@ python -m venv .venv && ./.venv/bin/pip install -r requirements.txt
 ./.venv/bin/python etl/gen_data_dictionary.py   # 產出 docs/data_dictionary.md
 ```
 
-兩個看似小事的細節都是刻意的：密碼用**單引號**（zsh 會對雙引號內的 `!` 做 history expansion，容器建不起來且錯誤不指向引號）；埠綁 **127.0.0.1**（密碼在公開 README 裡，綁 0.0.0.0 等於把 `sa` 開給整個區網——此密碼僅供本機拋棄式容器與公開資料集，雲端密碼由 Terraform 產生、不進版控）。
-
 容器映像選用 **Azure SQL Edge（原生 arm64）** 而非 SQL Server 2022，是實測後的被迫取捨：後者在 Apple Silicon 上以模擬層執行會直接崩潰。原因與排查過程見[環境備註](#環境備註為什麼是-azure-sql-edge-而不是-sql-server-2022)。
 
 | 你想看 | 去這裡 |
@@ -269,3 +267,5 @@ docs/data_dictionary.md      自動產出，勿手改
 2. **DDL 可重複執行不是加 `IF EXISTS` 就好**：第一版沒有 teardown 段，腳本跑到一半失敗後，殘留的事實表就用外鍵擋住了維度表的 `DROP`，整份腳本再也跑不動。拆除順序必須反依賴。
 3. **稽核的「樣本」欄要放摘要不是明細**：第一版用 `STRING_AGG` 串接每一列的碼值，三萬列瞬間爆掉 `NVARCHAR(400)`。
 4. **`GO` 不是 T-SQL 語法**，是 sqlcmd 的批次分隔符。用程式送 SQL 時必須自己切批次，否則 `CREATE SCHEMA` 這類必須獨立成批的語句會失敗。
+5. **zsh 會對雙引號內的 `!` 做 history expansion**：`"…DwStar!2026dev"` 直接報 `no such event: 2026`，容器建不起來且錯誤完全不指向引號。密碼一律單引號。
+6. **`-p 11433:1433` 預設綁 0.0.0.0**：密碼就在公開 README 裡，等於把 `sa` 開給整個區網——帶著容器上外部 Wi-Fi 時尤其真實。綁 `127.0.0.1` 對重現流程零影響。（此密碼僅供本機拋棄式容器與公開資料集；雲端密碼由 Terraform 產生、不進版控。）
