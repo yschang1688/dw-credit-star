@@ -17,8 +17,10 @@
 git clone https://github.com/yschang1688/dw-credit-star.git && cd dw-credit-star   # 之後的指令都在 repo 根目錄執行
 
 # 密碼的單引號是刻意的——zsh 會對雙引號內的 ! 做 history expansion，容器建不起來且錯誤不指向引號
+# 埠綁 127.0.0.1 也是刻意的——密碼在公開 README 裡，綁 0.0.0.0 等於把 sa 開給整個區網
+# （此密碼僅用於本機拋棄式容器，資料為公開資料集；雲端密碼由 Terraform 產生、不進版控）
 docker run -d --name creditdw -e 'ACCEPT_EULA=1' -e 'MSSQL_SA_PASSWORD=DwStar!2026dev' \
-  -e 'MSSQL_PID=Developer' -p 11433:1433 mcr.microsoft.com/azure-sql-edge:latest
+  -e 'MSSQL_PID=Developer' -p 127.0.0.1:11433:1433 mcr.microsoft.com/azure-sql-edge:latest
 
 python -m venv .venv && ./.venv/bin/pip install -r requirements.txt
 ./.venv/bin/python etl/run_etl.py               # 綱要 → 載入 → 稽核，約 3 分鐘；重跑筆數不變
