@@ -14,8 +14,10 @@
 ## 完整重現
 
 ```bash
-docker run -d --name creditdw -e "ACCEPT_EULA=1" -e "MSSQL_SA_PASSWORD=DwStar!2026dev" \
-  -e "MSSQL_PID=Developer" -p 11433:1433 mcr.microsoft.com/azure-sql-edge:latest
+# 密碼用單引號：zsh 互動殼會對雙引號內的 `!` 做 history expansion（`!2026` → no such event），
+# 容器建不起來且錯誤訊息完全不指向引號。單引號才是字面值。
+docker run -d --name creditdw -e 'ACCEPT_EULA=1' -e 'MSSQL_SA_PASSWORD=DwStar!2026dev' \
+  -e 'MSSQL_PID=Developer' -p 11433:1433 mcr.microsoft.com/azure-sql-edge:latest
 
 python -m venv .venv && ./.venv/bin/pip install -r requirements.txt
 ./.venv/bin/python etl/run_etl.py               # 綱要 → 載入 → 稽核，約 3 分鐘
