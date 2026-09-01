@@ -14,6 +14,10 @@
 ## 完整重現
 
 ```bash
+git clone https://github.com/yschang1688/dw-credit-star.git && cd dw-credit-star
+# 以下所有指令都在 repo 根目錄執行——路徑全是相對的，
+# 在別的目錄貼上會得到一串 No such file，而不是一個指向這裡的錯誤。
+
 # 密碼用單引號：zsh 互動殼會對雙引號內的 `!` 做 history expansion（`!2026` → no such event），
 # 容器建不起來且錯誤訊息完全不指向引號。單引號才是字面值。
 docker run -d --name creditdw -e 'ACCEPT_EULA=1' -e 'MSSQL_SA_PASSWORD=DwStar!2026dev' \
