@@ -14,11 +14,8 @@
 ## 完整重現
 
 ```bash
-git clone https://github.com/yschang1688/dw-credit-star.git && cd dw-credit-star   # 之後的指令都在 repo 根目錄執行
+git clone https://github.com/yschang1688/dw-credit-star.git && cd dw-credit-star
 
-# 密碼的單引號是刻意的——zsh 會對雙引號內的 ! 做 history expansion，容器建不起來且錯誤不指向引號
-# 埠綁 127.0.0.1 也是刻意的——密碼在公開 README 裡，綁 0.0.0.0 等於把 sa 開給整個區網
-# （此密碼僅用於本機拋棄式容器，資料為公開資料集；雲端密碼由 Terraform 產生、不進版控）
 docker run -d --name creditdw -e 'ACCEPT_EULA=1' -e 'MSSQL_SA_PASSWORD=DwStar!2026dev' \
   -e 'MSSQL_PID=Developer' -p 127.0.0.1:11433:1433 mcr.microsoft.com/azure-sql-edge:latest
 
@@ -26,6 +23,8 @@ python -m venv .venv && ./.venv/bin/pip install -r requirements.txt
 ./.venv/bin/python etl/run_etl.py               # 綱要 → 載入 → 稽核，約 3 分鐘；重跑筆數不變
 ./.venv/bin/python etl/gen_data_dictionary.py   # 產出 docs/data_dictionary.md
 ```
+
+兩個看似小事的細節都是刻意的：密碼用**單引號**（zsh 會對雙引號內的 `!` 做 history expansion，容器建不起來且錯誤不指向引號）；埠綁 **127.0.0.1**（密碼在公開 README 裡，綁 0.0.0.0 等於把 `sa` 開給整個區網——此密碼僅供本機拋棄式容器與公開資料集，雲端密碼由 Terraform 產生、不進版控）。
 
 容器映像選用 **Azure SQL Edge（原生 arm64）** 而非 SQL Server 2022，是實測後的被迫取捨：後者在 Apple Silicon 上以模擬層執行會直接崩潰。原因與排查過程見[環境備註](#環境備註為什麼是-azure-sql-edge-而不是-sql-server-2022)。
 
