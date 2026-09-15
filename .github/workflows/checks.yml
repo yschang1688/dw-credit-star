@@ -149,3 +149,6 @@ jobs:
           print(f"✓ dbt 專案解析成功；{len(models.strip().splitlines())} 個模型、"
                 f"{len(tests.strip().splitlines())} 項測試，核心守衛齊全")
           PY2
+      - name: 血緣文件與 manifest 一致（治理守衛：模型改了文件沒重產就紅燈）
+        if: matrix.adapter == 'dbt-sqlserver'
+        run: python tools/lineage_md.py --check

@@ -38,6 +38,8 @@ python -m venv .venv && ./.venv/bin/pip install -r requirements.txt
 | Kubernetes 部署（StatefulSet／Job／就緒探針；叢集實跑＋冪等驗證） | [`k8s/`](k8s/) |
 | 互動儀表板（遷移矩陣、分層鑑別力、逾期率趨勢、品質看板） | [Tableau Public](https://public.tableau.com/app/profile/yu.sheng.chang/viz/credit-risk-dw-dashboard/1)・規格見 [`bi/`](bi/) |
 | 資料字典（由系統目錄自動產出） | [`docs/data_dictionary.md`](docs/data_dictionary.md) |
+| 資料治理標準（分層契約、粒度與比率、規則分級、指標單一來源；每條指向執行點） | [`docs/governance.md`](docs/governance.md) |
+| 資料血緣（來源→暫存→維度事實→語意層→儀表板；從 manifest 產出、CI 守衛） | [`docs/lineage.md`](docs/lineage.md) |
 
 
 來源：UCI「default of credit card clients」（台灣某銀行 2005，30,000 卡戶，六個月帳單／繳款）。

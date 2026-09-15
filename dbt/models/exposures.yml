@@ -1,0 +1,42 @@
+version: 2
+
+# 血緣的最後一段：模型 → 下游消費者。
+# 沒有這段，dbt docs 的血緣圖停在 marts，看不出「改 dim_customer 會動到哪張儀表板」。
+# exposure 是宣告，不是連線——它不會去碰 Tableau；價值在於 `dbt ls --select +exposure:*`
+# 能反查每個下游依賴的完整上游，變更影響分析不用靠記憶。
+
+exposures:
+  - name: credit_risk_dashboard
+    label: Tableau Public「credit-risk-dw-dashboard」
+    type: dashboard
+    maturity: medium
+    url: https://public.tableau.com/app/profile/yu.sheng.chang/viz/credit-risk-dw-dashboard/1
+    description: |
+      四張圖：遷移矩陣、分層鑑別力、整體逾期率趨勢、品質看板。
+      資料經 `etl/export_bi_extract.py` 匯出成五張單一粒度的 CSV（bi/extract/），
+      每張表的粒度寫在檔頭；儀表板端的比率全部「先加總再相除」，定義與 _semantic.yml 一致。
+    depends_on:
+      - ref('fact_monthly_statement')
+      - ref('fact_default_outcome')
+      - ref('dim_customer')
+      - ref('dim_date')
+      - ref('dim_payment_status')
+    owner:
+      name: Yu-Sheng Chang
+      email: yschang1688@gmail.com
+
+  - name: data_dictionary
+    label: 資料字典（docs/data_dictionary.md）
+    type: application
+    maturity: high
+    url: https://github.com/yschang1688/dw-credit-star/blob/main/docs/data_dictionary.md
+    description: |
+      由系統目錄（sys.tables／sys.columns／擴充屬性）自動產出，非手寫；
+      每次 ETL 通過品質閘後重新生成，所以它描述的永遠是「通過稽核的那一版綱要」。
+    depends_on:
+      - ref('dim_customer')
+      - ref('fact_monthly_statement')
+      - ref('fact_default_outcome')
+    owner:
+      name: Yu-Sheng Chang
+      email: yschang1688@gmail.com
