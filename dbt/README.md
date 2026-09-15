@@ -31,6 +31,9 @@ DBT_PROFILES_DIR=. dbt docs generate --target edge        # 血緣圖＋逐欄�
 | 跨引擎對帳查詢（BigQuery vs SQL Server） | [`analyses/reconcile_with_sqlserver.sql`](analyses/reconcile_with_sqlserver.sql) |
 | 同庫對帳查詢（dbt 版 vs 預存程序版，含端點慣例陷阱） | [`analyses/reconcile_edge_dbt_vs_procs.sql`](analyses/reconcile_edge_dbt_vs_procs.sql) |
 | 方言差異的唯一集中點（Fabric-ready 的機制） | [`macros/cross_db.sql`](macros/cross_db.sql) |
+| 業務指標的唯一定義（語意層：三個 ratio metric、粒度綁 semantic model） | [`models/marts/_semantic.yml`](models/marts/_semantic.yml) |
+| 血緣延伸到下游（Tableau 儀表板、資料字典） | [`models/exposures.yml`](models/exposures.yml) |
+| 血緣文件（從 manifest 產出、CI 守住不漂移） | [`../docs/lineage.md`](../docs/lineage.md)・[`../tools/lineage_md.py`](../tools/lineage_md.py) |
 
 **刻意不裝 dbt_utils／dbt_expectations**：那兩個套件要 `dbt deps` 拉網路，
 而本專案的賣點之一是完整重現——多一層網路相依就多一個「別人跑不起來」的理由。

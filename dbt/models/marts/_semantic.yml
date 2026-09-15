@@ -1,0 +1,136 @@
+version: 2
+
+# 語意層：每個業務指標只在這裡定義一次。
+#
+# 這份檔案回答的問題是「違約率到底是什麼」——不是在三張報表裡各算一次、
+# 然後某天發現數字對不起來。三個規則寫死在 measure／metric 的結構裡：
+#   1. 比率一律「先加總再相除」：ratio metric 的分子分母各是一個 SUM measure，
+#      對每列比率取平均會得到「平均的平均」（bi/README.md 同一條規則）。
+#   2. 粒度不同的指標掛在不同的 semantic model：違約率是客戶級（fact_default_outcome），
+#      逾期率與使用率是客戶月級（fact_monthly_statement）；混在一張表算，違約會被數六次。
+#   3. 指標名稱＝資料字典與 BI 端用的名稱，改定義只改這裡，下游 exposures 跟著標記受影響。
+#
+# 誠實邊界：本專案只定義並以 `dbt parse` 驗證語意層結構；MetricFlow 的查詢端
+# （`dbt sl query`）需要 dbt Cloud 或支援的 adapter，本地 sqlserver／edge target 未跑。
+
+semantic_models:
+  - name: monthly_statement
+    description: 客戶月級事實：一個客戶在一個月的帳單、繳款與繳款狀態。
+    model: ref('fact_monthly_statement')
+    defaults:
+      agg_time_dimension: statement_month
+    entities:
+      - name: statement
+        type: primary
+        expr: statement_sk
+      - name: customer
+        type: foreign
+        expr: customer_sk
+    dimensions:
+      - name: statement_month
+        type: time
+        type_params:
+          time_granularity: month
+        # date_key 是 yyyymm 整數；語意層的時間維度要是日期型別
+        expr: "cast(concat(cast(date_key / 100 as varchar(4)), '-', right('0' + cast(date_key % 100 as varchar(2)), 2), '-01') as date)"
+    measures:
+      - name: customer_months
+        description: 客戶月數（逾期率與使用率的分母）。
+        agg: count
+        expr: statement_sk
+      - name: delinquent_months
+        description: 繳款狀態碼 ≥ 1（延遲一個月以上）的客戶月數。定義來源＝dim_payment_status.is_delinquent。
+        agg: sum
+        expr: "case when pay_status_code >= 1 then 1 else 0 end"
+      - name: bill_amount_sum
+        description: 帳單金額加總（使用率分子）。
+        agg: sum
+        expr: bill_amount
+      - name: credit_limit_sum
+        description: 額度加總（使用率分母；存分母不存比率）。
+        agg: sum
+        expr: credit_limit
+
+  - name: default_outcome
+    description: 客戶級事實：觀測期後次月是否違約，一個客戶一列。
+    model: ref('fact_default_outcome')
+    defaults:
+      agg_time_dimension: outcome_month
+    entities:
+      - name: outcome
+        type: primary
+        expr: outcome_sk
+      - name: customer
+        type: foreign
+        expr: customer_sk
+    dimensions:
+      - name: outcome_month
+        type: time
+        type_params:
+          time_granularity: month
+        expr: "cast(concat(cast(date_key / 100 as varchar(4)), '-', right('0' + cast(date_key % 100 as varchar(2)), 2), '-01') as date)"
+    measures:
+      - name: customers
+        description: 客戶數（違約率分母）。
+        agg: count
+        expr: outcome_sk
+      - name: defaults
+        description: 違約客戶數（is_default = 1）。
+        agg: sum
+        expr: is_default
+
+metrics:
+  # ratio metric 的分子分母必須是 metric 而非 measure（dbt 語意層的規則），
+  # 所以每個 measure 先包成一個 simple metric。這些 simple metric 本身也可直接查。
+  - name: customer_months
+    label: 客戶月數
+    type: simple
+    type_params: {measure: customer_months}
+  - name: delinquent_months
+    label: 逾期客戶月數
+    type: simple
+    type_params: {measure: delinquent_months}
+  - name: bill_amount_sum
+    label: 帳單金額加總
+    type: simple
+    type_params: {measure: bill_amount_sum}
+  - name: credit_limit_sum
+    label: 額度加總
+    type: simple
+    type_params: {measure: credit_limit_sum}
+  - name: customers
+    label: 客戶數
+    type: simple
+    type_params: {measure: customers}
+  - name: defaults
+    label: 違約客戶數
+    type: simple
+    type_params: {measure: defaults}
+
+  - name: delinquency_rate
+    label: 逾期率
+    description: |
+      逾期客戶月 ÷ 客戶月。粒度＝客戶月，可依月份、風險等級切。
+      這是 Tableau 儀表板「整體逾期率趨勢」那條線（10.3% → 22.7%）的唯一定義。
+    type: ratio
+    type_params:
+      numerator: delinquent_months
+      denominator: customer_months
+
+  - name: credit_utilization
+    label: 額度使用率
+    description: 帳單金額加總 ÷ 額度加總。先加總再相除；對每列使用率取平均會讓小額帳戶與大額帳戶等權。
+    type: ratio
+    type_params:
+      numerator: bill_amount_sum
+      denominator: credit_limit_sum
+
+  - name: default_rate
+    label: 違約率
+    description: |
+      違約客戶 ÷ 客戶。粒度＝客戶，**不可**從客戶月級事實算——同一客戶會被數六次。
+      風險分層鑑別力（HIGH 69.6%／MEDIUM 24.3%／LOW 13.2%）就是這個指標依觀測期末等級切的結果。
+    type: ratio
+    type_params:
+      numerator: defaults
+      denominator: customers
