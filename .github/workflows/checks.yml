@@ -99,16 +99,28 @@ jobs:
       - run: python -m pytest tests/ -q
 
   dbt-project:
-    # BigQuery 版是同一份倉儲的第三種實作。這一關不連線（dbt parse 不需要憑證），
-    # 只確保專案結構、Jinja 與測試定義沒壞——那是沒有 GCP 帳號也驗得到的部分。
+    # dbt 專案是同一份倉儲的第三種實作，而且是多引擎的：BigQuery（sandbox）與
+    # T-SQL 家族（edge，dbt-fabric 的前置）。這一關不連線（dbt parse 不需要憑證），
+    # 但兩個 adapter 各 parse 一次——dispatch macro 少寫一個分支、或 Jinja 只在某個
+    # target 下炸掉，單一 adapter 的 parse 是看不到的。
     runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        include:
+          - adapter: dbt-bigquery
+            target: sandbox
+          - adapter: dbt-sqlserver
+            target: edge
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
           cache: pip
-      - run: pip install "dbt-bigquery>=1.9"
+      - if: matrix.adapter == 'dbt-sqlserver'
+        # pyodbc 匯入時要找 libodbc；parse 不連線，但 adapter 載入這一步就需要它
+        run: sudo apt-get update -q && sudo apt-get install -y --no-install-recommends unixodbc
+      - run: pip install "${{ matrix.adapter }}>=1.9"
       - name: dbt 專案可解析，且核心模型與測試都在
         working-directory: dbt
         env:
@@ -116,9 +128,9 @@ jobs:
         run: |
           cp profiles.yml.example profiles.yml
           sed -i 's/your-gcp-project-id/ci-parse-only/' profiles.yml
-          dbt parse
-          dbt list --resource-type model > /tmp/models.txt
-          dbt list --resource-type test  > /tmp/tests.txt
+          dbt parse --target ${{ matrix.target }}
+          dbt list --resource-type model --target ${{ matrix.target }} > /tmp/models.txt
+          dbt list --resource-type test  --target ${{ matrix.target }} > /tmp/tests.txt
           python - <<'PY2'
           import sys
           models = open("/tmp/models.txt").read()

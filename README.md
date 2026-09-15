@@ -34,6 +34,7 @@ python -m venv .venv && ./.venv/bin/pip install -r requirements.txt
 | 星狀綱要讓哪些問題變好問 | [`sql/05_analysis_queries.sql`](sql/05_analysis_queries.sql) |
 | 容器化執行環境與跨平台取捨 | [環境備註](#環境備註為什麼是-azure-sql-edge-而不是-sql-server-2022) |
 | Airflow 編排（SCD2 時序依賴鏈、品質閘、批次對稱收尾；兩輪實跑驗證） | [`airflow/`](airflow/) |
+| dbt 轉換層（多引擎：BigQuery＋本機 T-SQL；dispatch macro、血緣文件、同庫對帳） | [`dbt/`](dbt/) |
 | Kubernetes 部署（StatefulSet／Job／就緒探針；叢集實跑＋冪等驗證） | [`k8s/`](k8s/) |
 | 互動儀表板（遷移矩陣、分層鑑別力、逾期率趨勢、品質看板） | [Tableau Public](https://public.tableau.com/app/profile/yu.sheng.chang/viz/credit-risk-dw-dashboard/1)・規格見 [`bi/`](bi/) |
 | 資料字典（由系統目錄自動產出） | [`docs/data_dictionary.md`](docs/data_dictionary.md) |
@@ -224,12 +225,19 @@ Terraform 定義資源群組、邏輯伺服器、資料庫與單一 IP 防火牆
 **沒有迴圈就沒有「月份順序」這個失敗模式**——順序性被編碼在 `ORDER BY` 裡。
 代價也要說：集合式必須看得到全部歷史才算得對區間，真實系統的增量載入用這個寫法得整表重算。
 
+dbt 專案自 2026-09 起是**多引擎**的：同一份模型與測試多了 `edge` target，
+打本機 Azure SQL Edge 容器、與預存程序版同庫並存並完成同庫對帳（零差異）。
+方言差異集中在 `dbt/macros/cross_db.sql` 的 dispatch macro，`default__` 寫 T-SQL——
+這是為 **Microsoft Fabric（dbt-fabric）**鋪的路：同方言、同 macro，接上只差換 target。
+細節與存證見 [`dbt/README.md`](dbt/README.md)、[`docs/evidence/dbt-edge/`](docs/evidence/dbt-edge/run.md)。
+
 ### ⚠️ 實跑狀態
 
 | 雲 | 狀態 |
 |---|---|
 | AWS RDS | ✅ **已實跑**：18 萬列、51,110 個 SCD2 版本、拆除後資源實查歸零，整趟 US$1 內（存證見 `docs/evidence/`） |
 | Azure SQL Database | ⚠️ **IaC 與可攜層完成，雲端實跑未執行**。可攜層已在本機同引擎（Azure SQL Edge）以 `DW_PLATFORM=azure-sql` 端到端驗過：180,000 / 51,110 / 30,000 與預設模式逐項相同。Terraform 通過 `validate` 與 `fmt`，尚未 `apply` |
+| dbt × Azure SQL Edge（本機） | ✅ **已實跑（2026-09-15）**：44 節點（5 seeds＋5 模型＋34 測試）全綠約 100 秒、重跑冪等；與預存程序版同庫對帳三項全零差異（存證見 `docs/evidence/dbt-edge/`）|
 | BigQuery | ✅ **已實跑（2026-08-10，Sandbox 無計費帳戶）**：180,000 / 30,000 / 51,110 與 SQL Server 版逐項相同；34 項 dbt 測試全過；**跨引擎對帳 25 列逐列一致**；拆除後實查剩餘 dataset 為空（存證見 `docs/evidence/gcp/`）|
 
 **Azure 尚未實跑**，需要 Azure 訂閱才能 `apply`；在跑過並留下存證之前不宣稱它。
@@ -244,7 +252,7 @@ IDENTITY vs 確定性雜湊、索引 vs 分區叢集）算出同一份倉儲。
 ```
 infra/aws/                   Terraform：RDS、安全群組、子網路群組 + 最小權限 IAM 政策
 infra/azure/                 Terraform：資源群組、邏輯伺服器、serverless 資料庫、單一 IP 防火牆
-dbt/                         BigQuery 版的同一份倉儲（模型／seed／測試／跨引擎對帳查詢）
+dbt/                         同一份倉儲的 dbt 表達（多引擎：BigQuery＋本機 T-SQL；模型／seed／測試／對帳查詢）
 tests/                       跨雲可攜的守門測試（批次切分與資料庫脈絡批次的辨識）
 docs/runbook-aws.md          AWS 部署 runbook（開／跑／拆 + 已知踩點）
 docs/runbook-azure.md        Azure 部署 runbook（含與 AWS 的結構差異對照）

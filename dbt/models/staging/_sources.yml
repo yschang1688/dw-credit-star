@@ -9,7 +9,9 @@ sources:
 
       載入方式見 `docs/runbook-gcp.md`：以 `bq load` 從同一份 CSV 快照載入，
       與 SQL Server 版走的是**同一個 export**，兩邊才比得起來。
-    schema: "{{ target.dataset }}_raw"
+    # BigQuery 落在 <dataset>_raw；T-SQL 家族（Edge／Fabric）直接讀原 ETL 落地的 stg 綱要——
+    # 兩套實作共用同一張落地表，對帳才有意義。
+    schema: "{{ (target.dataset ~ '_raw') if target.type == 'bigquery' else 'stg' }}"
     tables:
       - name: credit_clients
         columns:

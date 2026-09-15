@@ -35,7 +35,7 @@ select
     case
         when u.pay_status_code >= 2 then 'HIGH'
         when u.pay_status_code = 1
-             or (u.limit_bal > 0 and safe_divide(u.bill_amount, u.limit_bal) > 0.90) then 'MEDIUM'
+             or (u.limit_bal > 0 and {{ safe_div('u.bill_amount', 'u.limit_bal') }} > 0.90) then 'MEDIUM'
         else 'LOW'
     end as risk_tier,
     case
@@ -46,4 +46,4 @@ select
         else '60+'
     end as age_band
 from unpivoted as u
-join {{ ref('dim_date') }} as d using (source_month_ix)
+join {{ ref('dim_date') }} as d on d.source_month_ix = u.source_month_ix

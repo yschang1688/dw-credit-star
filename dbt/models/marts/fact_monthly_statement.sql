@@ -21,7 +21,7 @@
 */
 
 select
-    farm_fingerprint(format('%d|%d', s.client_id, s.date_key)) as statement_sk,
+    {{ hash_sk(['s.client_id', 's.date_key']) }} as statement_sk,
     c.customer_sk,
     s.date_key,
     s.pay_status_code,
