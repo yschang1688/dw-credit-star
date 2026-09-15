@@ -19,3 +19,20 @@ dw_credit_star:
       #   - 所有資料表 60 天後自動過期，且不能設定更長——短命環境正好
       #   - 不支援 DML 的部分配額，但本專案用的都在允許範圍內
       maximum_bytes_billed: 1073741824   # 1 GB 上限，跑錯查詢時直接失敗而不是產生帳單
+
+    # 本機 T-SQL 家族 target：打 quickstart 起的 Azure SQL Edge 容器。
+    # 這個 target 的存在理由是 dbt-fabric 前置驗證——dbt-sqlserver 與 dbt-fabric
+    # 講同一種 T-SQL 方言、共用 macros/cross_db.sql 的 default__ 實作，
+    # 在這裡跑通的模型與測試，接 Fabric Warehouse 只差換 target。
+    edge:
+      type: sqlserver
+      driver: "ODBC Driver 18 for SQL Server"
+      server: 127.0.0.1
+      port: 11433
+      database: CreditRiskDW
+      schema: dbt                # 產物落在 dbt_stg／dbt_dw，與預存程序版的 stg／dw 並存不相撞
+      user: sa
+      password: "{{ env_var('DW_SA_PASSWORD', 'DwStar!2026dev') }}"   # quickstart 的公開開發密碼
+      encrypt: true
+      trust_cert: true           # 容器是自簽憑證；正式環境不准開這個
+      threads: 4

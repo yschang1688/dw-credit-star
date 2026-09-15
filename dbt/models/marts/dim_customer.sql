@@ -63,7 +63,7 @@ versioned as (
 )
 
 select
-    farm_fingerprint(format('%d|%d', client_id, valid_from_date)) as customer_sk,
+    {{ hash_sk(['client_id', 'valid_from_date']) }} as customer_sk,
     client_id,
     limit_bal,
     sex_code, education_code, marriage_code,
@@ -73,6 +73,6 @@ select
     -- 兩者是同一個區間的兩種端點慣例。對帳查詢（analyses/）比的是
     -- **每個客戶每個月落在哪一版**，而不是端點數字本身——那才是語意等價的檢驗。
     coalesce(next_from, 999912) as valid_to_date,
-    next_from is null           as is_current,
+    {{ bool_flag('next_from is null') }} as is_current,
     version_num
 from versioned

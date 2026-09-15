@@ -25,10 +25,10 @@
 
 {% test dbt_utils_free_exactly_one_current(model) %}
     -- SCD2：每個自然鍵恰好一個當前版本。
-    select client_id, countif(is_current) as current_versions
+    select client_id, {{ count_true('is_current') }} as current_versions
     from {{ model }}
     group by client_id
-    having countif(is_current) <> 1
+    having {{ count_true('is_current') }} <> 1
 {% endtest %}
 
 

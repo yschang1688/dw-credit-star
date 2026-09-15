@@ -3,6 +3,12 @@ version: "1.0.0"
 config-version: 2
 profile: dw_credit_star
 
+flags:
+  # dbt-sqlserver 的舊版行為會把 +schema 直接當 schema 名——在本專案會撞到
+  # 預存程序版既有的 stg／dw。開這個旗標走 dbt 標準串接（target.schema + '_' + 自訂名），
+  # 產物落在 dbt_stg／dbt_dw，兩套實作同庫並存、可互相對帳。
+  dbt_sqlserver_use_default_schema_concat: True
+
 model-paths: ["models"]
 seed-paths: ["seeds"]
 macro-paths: ["macros"]
@@ -27,7 +33,25 @@ models:
 seeds:
   dw_credit_star:
     +schema: dw
+    # 中文標籤欄在 T-SQL 家族必須是 NVARCHAR——dbt-sqlserver 預設把字串載成 VARCHAR（非 Unicode），
+    # 在預設 collation 下中文會靜默變成問號，而且 seed 照樣回報成功。
+    # BigQuery 只有一種 STRING，所以型別依 target 分流。
     dim_date:
       +column_types:
-        date_key: INT64
+        # bigint 在 BigQuery 是 INT64 的官方別名、在 T-SQL 家族是原生型別——同一個字兩邊通吃
+        date_key: bigint
         month_end_date: DATE
+        month_name_zh: "{{ 'string' if target.type == 'bigquery' else 'nvarchar(20)' }}"
+    dim_sex:
+      +column_types:
+        sex_desc: "{{ 'string' if target.type == 'bigquery' else 'nvarchar(20)' }}"
+    dim_education:
+      +column_types:
+        education_desc: "{{ 'string' if target.type == 'bigquery' else 'nvarchar(50)' }}"
+    dim_marriage:
+      +column_types:
+        marriage_desc: "{{ 'string' if target.type == 'bigquery' else 'nvarchar(50)' }}"
+    dim_payment_status:
+      +column_types:
+        documented_desc: "{{ 'string' if target.type == 'bigquery' else 'nvarchar(100)' }}"
+        common_reading: "{{ 'string' if target.type == 'bigquery' else 'nvarchar(100)' }}"

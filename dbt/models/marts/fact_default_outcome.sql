@@ -27,13 +27,13 @@ outcome as (
 )
 
 select
-    farm_fingerprint(format('%d|outcome', o.client_id)) as outcome_sk,
+    {{ hash_sk(['o.client_id', "'outcome'"]) }} as outcome_sk,
     c.customer_sk,
     (select date_key from {{ ref('dim_date') }} where source_month_ix = 7) as date_key,
     o.client_id,
     o.default_next_month as is_default
 from outcome as o
-join last_observed as l using (client_id)
+join last_observed as l on l.client_id = o.client_id
 join {{ ref('dim_customer') }} as c
   on  c.client_id = o.client_id
   and l.last_date_key >= c.valid_from_date
