@@ -35,6 +35,7 @@ python -m venv .venv && ./.venv/bin/pip install -r requirements.txt
 | 容器化執行環境與跨平台取捨 | [環境備註](#環境備註為什麼是-azure-sql-edge-而不是-sql-server-2022) |
 | Airflow 編排（SCD2 時序依賴鏈、品質閘、批次對稱收尾；兩輪實跑驗證） | [`airflow/`](airflow/) |
 | dbt 轉換層（多引擎：BigQuery＋本機 T-SQL；dispatch macro、血緣文件、同庫對帳） | [`dbt/`](dbt/) |
+| 治理標準（每條指向執行點）、語意層指標、血緣圖與變更影響表 | [`docs/governance.md`](docs/governance.md)・[`docs/lineage.md`](docs/lineage.md)・[下方導覽](#治理語意層與血緣三件事一個原則) |
 | Kubernetes 部署（StatefulSet／Job／就緒探針；叢集實跑＋冪等驗證） | [`k8s/`](k8s/) |
 | 互動儀表板（遷移矩陣、分層鑑別力、逾期率趨勢、品質看板） | [Tableau Public](https://public.tableau.com/app/profile/yu.sheng.chang/viz/credit-risk-dw-dashboard/1)・規格見 [`bi/`](bi/) |
 | 資料字典（由系統目錄自動產出） | [`docs/data_dictionary.md`](docs/data_dictionary.md) |
@@ -145,6 +146,20 @@ JOIN dw.dim_customer AS d
 **ERROR 與 WARN 分野明確。** ERROR 是倉儲自身邏輯壞掉（粒度重複、孤兒鍵、版本重疊），必須修；WARN 是來源本來就長這樣（未定義碼值、帳單超額）。把來源髒資料判成 ERROR 會讓整條線每天紅燈，紅燈久了就沒人看——那比不檢核更糟。
 
 **資料字典從系統目錄產出，不手寫。** 手寫的一定過期：欄位改了沒人記得改文件，久了就沒人信。`etl/gen_data_dictionary.py` 讀 `sys.tables` / `sys.columns` / `sys.foreign_key_columns`，文件與綱要不可能不一致。
+
+## 治理、語意層與血緣：三件事，一個原則
+
+2026-09-15 的 `feat(governance)` 把倉儲裡**已經在執行的規則**寫成標準、把指標定義收成一處、把血緣接到下游。三件事共用一個原則：**沒有執行點的規則不收**——寫在文件裡但沒有東西擋的「標準」，第二個月就沒人遵守。
+
+**① 治理標準 [`docs/governance.md`](docs/governance.md)。** 八節，每一條都指向程式碼或 CI 裡實際擋人的位置。例如分層契約：`stg` 只做同構落地、不做業務轉換（執行點 `sql/01_schema.sql` 與 `dbt/models/staging/_sources.yml`），理由是轉換混進落地層，出問題時分不清是來源髒還是自己弄髒的。品質規則 12 條、代碼穩定（`FACT_GRAIN`、`SCD2_NO_OVERLAP`、`FACT_BILL_OVER_LIMIT`…），**ERROR 是倉儲自身邏輯壞（8 條，擋）、WARN 是來源本來就這樣（4 條，標記不擋）**——分野是治理決策不是技術決策，把來源髒資料判成 ERROR 會讓整條線天天紅燈，紅燈久了沒人看。執行點：Airflow `quality_gate` 擋在資料字典產出之前；dbt 端 34 條測試任一 ERROR 即停。
+
+**② 語意層 [`dbt/models/marts/_semantic.yml`](dbt/models/marts/_semantic.yml)。** 三個業務指標各只定義一次，**分子分母各是一個 measure、粒度綁在對應的 semantic model**：額度使用率＝`bill_amount_sum ÷ credit_limit_sum`、逾期率＝`delinquent_months ÷ customer_months`（分子以 `pay_status_code >= 1` 計數），兩者掛在客戶月級的 `monthly_statement`；違約率＝`defaults ÷ customers` 掛在客戶級的 `default_outcome`——粒度不同的指標放同一張表算，違約會被數六次。比率一律先加總再相除：對每列比率取平均是「平均的平均」，小額與大額帳戶被當成等權。改指標定義的流程：改 yml → `dbt parse` → 重產血緣 → PR 裡看 exposures 標記的受影響下游。
+
+**③ 血緣 [`docs/lineage.md`](docs/lineage.md)。** 圖是**推導的，不是畫的**：[`tools/lineage_md.py`](tools/lineage_md.py)（約 160 行，零額外依賴）讀 dbt `manifest.json`，從 `ref()`／`source()` 依賴與 [`exposures.yml`](dbt/models/exposures.yml) 宣告產出 Mermaid 圖（七層、32 條邊）＋變更影響表＋指標定義表。exposure 那段讓血緣不停在 marts——改 `dim_customer` 會動到哪張儀表板，反查得到。`--check` 模式進 CI：模型或 exposure 改了、文件沒重產，PR 紅燈。
+
+**守衛自己也要被測。** 每道 CI 守衛都以突變體驗證過會擋：血緣守衛——改一個 exposure 名稱 → `--check` exit 1，還原 → exit 0；DAG 守衛——把 `quality_gate` 移到字典產出之後 → `sys.exit("品質閘未擋在資料字典之前——髒資料會產出文件")`；dbt 守衛——拿掉粒度測試 → `缺少測試`。不會作響的守衛跟壞掉的守衛，在 CI 畫面上長得一模一樣。
+
+**誠實邊界**（`governance.md` §8）：單一專案、單一資料集，沒有資料擁有者制度或跨部門指標委員會；語意層只驗到 `dbt parse` 的結構正確，MetricFlow 查詢端在本地 T-SQL target 未跑；血緣是表級與指標級，無欄位級。
 
 ## 環境備註：為什麼是 Azure SQL Edge 而不是 SQL Server 2022
 
